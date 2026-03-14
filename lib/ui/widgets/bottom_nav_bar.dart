@@ -51,17 +51,21 @@ class BottomNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
     return SizedBox(
-      height: _pillHeight + _fabSize / 2 + 16,
+      height: _pillHeight + _fabSize / 2 + 16 + bottomPadding,
       child: Stack(
         alignment: Alignment.bottomCenter,
         clipBehavior: Clip.none,
         children: [
           // Pill background with tabs
-          _buildPill(),
+          Padding(
+            padding: EdgeInsets.only(bottom: bottomPadding),
+            child: _buildPill(),
+          ),
           // Center FAB protruding above the pill
           Positioned(
-            bottom: _pillHeight / 2,
+            bottom: _pillHeight / 2 + bottomPadding,
             child: _buildFab(),
           ),
         ],
@@ -78,13 +82,14 @@ class BottomNavBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(_pillRadius),
         border: Border.all(color: _pillBorderColor, width: 1),
       ),
+      padding: const EdgeInsets.all(4),
       child: Row(
         children: [
           // Left tabs (HOME, SERVERS)
           Expanded(child: _buildTab(0)),
           Expanded(child: _buildTab(1)),
           // Center spacer for FAB
-          const SizedBox(width: _fabSize + 16),
+          const SizedBox(width: _fabSize + 8),
           // Right tabs (SESSIONS, SETTINGS)
           Expanded(child: _buildTab(2)),
           Expanded(child: _buildTab(3)),
@@ -102,14 +107,11 @@ class BottomNavBar extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: isActive ? _activeColor : Colors.transparent,
           borderRadius: BorderRadius.circular(26),
         ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
@@ -120,12 +122,15 @@ class BottomNavBar extends StatelessWidget {
             const SizedBox(height: 2),
             Text(
               tab.label,
+              maxLines: 1,
+              overflow: TextOverflow.visible,
+              softWrap: false,
               style: TextStyle(
                 fontFamily: 'JetBrains Mono',
-                fontSize: _tabFontSize,
+                fontSize: 8,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                 color: isActive ? const Color(0xFF0A0F1C) : _inactiveColor,
-                letterSpacing: 0.5,
+                letterSpacing: 0.3,
               ),
             ),
           ],

@@ -25,6 +25,9 @@ dependencies:
   xterm: ^4.0.0
   file_picker: ^10.3.10
 
+dependency_overrides:
+  record_linux: ^1.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
