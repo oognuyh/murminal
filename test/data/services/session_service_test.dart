@@ -153,7 +153,7 @@ void main() {
         mockSsh.onExecute((_) =>
             'murminal-${session.id}|$epoch|0|$epoch\n');
 
-        final sessions = await service.listSessions('server-1');
+        final sessions = await service.listSessions(serverId: 'server-1');
         expect(sessions, hasLength(1));
         expect(sessions[0].status, SessionStatus.running);
       });
@@ -168,7 +168,7 @@ void main() {
         // Mock tmux to return no sessions.
         mockSsh.onExecute((_) => '');
 
-        final sessions = await service.listSessions('server-1');
+        final sessions = await service.listSessions(serverId: 'server-1');
         expect(sessions, hasLength(1));
         expect(sessions[0].status, SessionStatus.done);
       });
@@ -187,7 +187,7 @@ void main() {
 
         mockSsh.onExecute((_) => '');
 
-        final sessions = await service.listSessions('server-1');
+        final sessions = await service.listSessions(serverId: 'server-1');
         expect(sessions, hasLength(1));
         expect(sessions[0].name, 'one');
       });
@@ -210,6 +210,186 @@ void main() {
       test('does nothing for non-existent session', () async {
         // Should not throw.
         await service.updateStatus('non-existent', SessionStatus.error);
+      });
+    });
+
+    group('getSession', () {
+      test('returns session when found', () async {
+        final session = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'find-me',
+        );
+
+        final found = service.getSession(session.id);
+        expect(found, isNotNull);
+        expect(found!.id, session.id);
+        expect(found.engine, 'claude');
+      });
+
+      test('returns null for non-existent session', () {
+        final found = service.getSession('does-not-exist');
+        expect(found, isNull);
+      });
+    });
+
+    group('deleteSession', () {
+      test('removes session from persistence', () async {
+        final session = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'to-delete',
+        );
+
+        await service.deleteSession(session.id);
+
+        final found = repository.findById(session.id);
+        expect(found, isNull);
+      });
+    });
+
+    group('multi-session management', () {
+      test('creates multiple sessions on same server', () async {
+        mockSsh.onExecute((_) => '');
+
+        final s1 = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'session-a',
+        );
+        final s2 = await service.createSession(
+          serverId: 'server-1',
+          engine: 'raw',
+          name: 'session-b',
+        );
+        final s3 = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'session-c',
+        );
+
+        expect(s1.id, isNot(equals(s2.id)));
+        expect(s2.id, isNot(equals(s3.id)));
+        expect(s1.serverId, 'server-1');
+        expect(s2.serverId, 'server-1');
+        expect(s3.serverId, 'server-1');
+
+        // All three should be persisted.
+        final all = repository.loadAll();
+        expect(all, hasLength(3));
+      });
+
+      test('creates sessions on different servers', () async {
+        mockSsh.onExecute((_) => '');
+
+        final s1 = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'alpha',
+        );
+        final s2 = await service.createSession(
+          serverId: 'server-2',
+          engine: 'raw',
+          name: 'beta',
+        );
+
+        expect(s1.serverId, 'server-1');
+        expect(s2.serverId, 'server-2');
+
+        final server1Sessions =
+            await service.listSessions(serverId: 'server-1');
+        expect(server1Sessions, hasLength(1));
+        expect(server1Sessions[0].name, 'alpha');
+
+        final server2Sessions =
+            await service.listSessions(serverId: 'server-2');
+        expect(server2Sessions, hasLength(1));
+        expect(server2Sessions[0].name, 'beta');
+      });
+
+      test('tracks session state independently', () async {
+        final s1 = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'independent-a',
+        );
+        final s2 = await service.createSession(
+          serverId: 'server-1',
+          engine: 'raw',
+          name: 'independent-b',
+        );
+
+        // Update only s1 to error, leave s2 running.
+        await service.updateStatus(s1.id, SessionStatus.error);
+
+        final storedS1 = repository.findById(s1.id);
+        final storedS2 = repository.findById(s2.id);
+        expect(storedS1!.status, SessionStatus.error);
+        expect(storedS2!.status, SessionStatus.running);
+      });
+
+      test('listSessions without serverId returns all sessions', () async {
+        await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'all-a',
+        );
+        await service.createSession(
+          serverId: 'server-2',
+          engine: 'raw',
+          name: 'all-b',
+        );
+        await service.createSession(
+          serverId: 'server-3',
+          engine: 'claude',
+          name: 'all-c',
+        );
+
+        mockSsh.onExecute((_) => '');
+
+        final all = await service.listSessions();
+        expect(all, hasLength(3));
+
+        final serverIds = all.map((s) => s.serverId).toSet();
+        expect(serverIds, containsAll(['server-1', 'server-2', 'server-3']));
+      });
+
+      test('terminateSession only affects targeted session', () async {
+        final s1 = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'keep',
+        );
+        final s2 = await service.createSession(
+          serverId: 'server-1',
+          engine: 'raw',
+          name: 'kill',
+        );
+
+        mockSsh.commands.clear();
+        await service.terminateSession(s2.id);
+
+        final storedS1 = repository.findById(s1.id);
+        final storedS2 = repository.findById(s2.id);
+        expect(storedS1!.status, SessionStatus.running);
+        expect(storedS2!.status, SessionStatus.done);
+      });
+
+      test('session metadata persists across repository reloads', () async {
+        final session = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'persist-test',
+        );
+
+        // Simulate reload by reading from repository.
+        final reloaded = repository.findById(session.id);
+        expect(reloaded, isNotNull);
+        expect(reloaded!.serverId, 'server-1');
+        expect(reloaded.engine, 'claude');
+        expect(reloaded.name, 'persist-test');
+        expect(reloaded.status, SessionStatus.running);
+        expect(reloaded.createdAt, isNotNull);
       });
     });
   });

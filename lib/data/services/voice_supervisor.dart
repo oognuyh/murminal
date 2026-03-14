@@ -409,7 +409,7 @@ class VoiceSupervisor {
     // Active sessions.
     buffer.writeln('## Active Sessions');
     try {
-      final sessions = await _sessionService.listSessions(serverId);
+      final sessions = await _sessionService.listSessions(serverId: serverId);
       if (sessions.isEmpty) {
         buffer.writeln('No active sessions.');
       } else {
