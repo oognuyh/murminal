@@ -53,12 +53,17 @@ class SessionService {
     await updateStatus(sessionId, SessionStatus.done);
   }
 
-  /// List all sessions for a given [serverId].
+  /// List sessions, optionally filtered by [serverId].
   ///
   /// Combines locally persisted metadata with live tmux session state.
   /// Sessions that no longer exist in tmux are marked as [SessionStatus.done].
-  Future<List<Session>> listSessions(String serverId) async {
-    final localSessions = _repository.loadByServer(serverId);
+  ///
+  /// When [serverId] is provided, only sessions for that server are returned.
+  /// When omitted, sessions across all servers are returned.
+  Future<List<Session>> listSessions({String? serverId}) async {
+    final localSessions = serverId != null
+        ? _repository.loadByServer(serverId)
+        : _repository.loadAll();
     final tmuxSessions = await _tmux.listSessions();
 
     final tmuxNames = tmuxSessions.map((t) => t.name).toSet();
@@ -92,6 +97,13 @@ class SessionService {
     return reconciled;
   }
 
+  /// Retrieve a single session by [sessionId].
+  ///
+  /// Returns null if no session with the given ID exists.
+  Session? getSession(String sessionId) {
+    return _repository.findById(sessionId);
+  }
+
   /// Update the status of a session by [sessionId].
   Future<void> updateStatus(String sessionId, SessionStatus status) async {
     final session = _repository.findById(sessionId);
@@ -99,6 +111,11 @@ class SessionService {
 
     final updated = session.copyWith(status: status);
     await _repository.save(updated);
+  }
+
+  /// Remove a terminated session from local persistence.
+  Future<void> deleteSession(String sessionId) async {
+    await _repository.delete(sessionId);
   }
 
   /// Generate a unique session identifier from the name and timestamp.

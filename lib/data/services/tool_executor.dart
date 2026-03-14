@@ -98,7 +98,7 @@ class ToolExecutor {
 
   /// List all active Murminal-managed tmux sessions.
   Future<ToolResult> _listSessions() async {
-    final sessions = await _sessionService.listSessions(serverId);
+    final sessions = await _sessionService.listSessions(serverId: serverId);
     final sessionList = sessions
         .map((s) => {
               'id': s.id,

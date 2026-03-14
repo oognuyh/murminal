@@ -90,11 +90,36 @@ final sessionServiceProvider = Provider<SessionService>((ref) {
 
 /// Lists sessions for a given server ID.
 ///
-/// Returns a [Future] that resolves to the reconciled session list.
+/// Returns a [Future] that resolves to the reconciled session list
+/// filtered to the specified server.
+final sessionsByServerProvider =
+    FutureProvider.family<List<Session>, String>((ref, serverId) async {
+  final service = ref.watch(sessionServiceProvider);
+  return service.listSessions(serverId: serverId);
+});
+
+/// Lists all sessions across all servers.
+///
+/// Returns a [Future] that resolves to every persisted session,
+/// reconciled against live tmux state.
+final allSessionsProvider = FutureProvider<List<Session>>((ref) async {
+  final service = ref.watch(sessionServiceProvider);
+  return service.listSessions();
+});
+
+/// Retrieves a single session by its ID.
+///
+/// Returns null if no session with the given ID exists.
+final sessionProvider = Provider.family<Session?, String>((ref, sessionId) {
+  final service = ref.watch(sessionServiceProvider);
+  return service.getSession(sessionId);
+});
+
+/// @deprecated Use [sessionsByServerProvider] instead.
 final sessionListProvider =
     FutureProvider.family<List<Session>, String>((ref, serverId) async {
   final service = ref.watch(sessionServiceProvider);
-  return service.listSessions(serverId);
+  return service.listSessions(serverId: serverId);
 });
 
 /// Microphone service for PCM audio capture.
