@@ -8,8 +8,14 @@ import 'package:murminal/data/models/voice_provider.dart';
 import 'package:murminal/data/repositories/session_repository.dart';
 import 'package:murminal/data/services/audio_session_service.dart';
 import 'package:murminal/data/services/session_service.dart';
+import 'package:murminal/data/services/mic_service.dart';
+import 'package:murminal/data/services/output_monitor.dart';
 import 'package:murminal/data/services/ssh_service.dart';
 import 'package:murminal/data/services/tmux_controller.dart';
+import 'package:murminal/data/services/voice/qwen_realtime_service.dart';
+import 'package:murminal/data/services/voice/realtime_voice_service.dart';
+import 'package:murminal/data/services/voice_supervisor.dart';
+import 'package:murminal/data/models/voice_supervisor_state.dart';
 
 /// Secure storage instance for API key management (BYOK).
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
@@ -88,4 +94,54 @@ final sessionListProvider =
     FutureProvider.family<List<Session>, String>((ref, serverId) async {
   final service = ref.watch(sessionServiceProvider);
   return service.listSessions(serverId);
+});
+
+/// Microphone service for PCM audio capture.
+final micServiceProvider = Provider<MicService>((ref) {
+  final service = MicService();
+  ref.onDispose(() => service.dispose());
+  return service;
+});
+
+/// Realtime voice service backed by the selected provider.
+///
+/// Currently defaults to [QwenRealtimeService]. When additional providers
+/// are implemented, this should switch based on [voiceProviderSettingProvider].
+final realtimeVoiceServiceProvider = Provider<RealtimeVoiceService>((ref) {
+  return QwenRealtimeService();
+});
+
+/// Output monitor for detecting tmux pane changes.
+final outputMonitorProvider = Provider<OutputMonitor>((ref) {
+  final tmux = ref.watch(tmuxControllerProvider);
+  final monitor = OutputMonitor(tmux);
+  ref.onDispose(monitor.dispose);
+  return monitor;
+});
+
+/// Voice supervisor parameterized by server ID.
+///
+/// Creates the full voice-to-terminal pipeline for the given server.
+final voiceSupervisorProvider =
+    Provider.family<VoiceSupervisor, String>((ref, serverId) {
+  final supervisor = VoiceSupervisor(
+    voiceService: ref.watch(realtimeVoiceServiceProvider),
+    audioSession: ref.watch(audioSessionServiceProvider),
+    mic: ref.watch(micServiceProvider),
+    tmux: ref.watch(tmuxControllerProvider),
+    sessionService: ref.watch(sessionServiceProvider),
+    outputMonitor: ref.watch(outputMonitorProvider),
+    serverId: serverId,
+  );
+  ref.onDispose(supervisor.dispose);
+  return supervisor;
+});
+
+/// Reactive stream of [VoiceSupervisorState] for UI binding.
+///
+/// Parameterized by server ID to match [voiceSupervisorProvider].
+final voiceSupervisorStateProvider =
+    StreamProvider.family<VoiceSupervisorState, String>((ref, serverId) {
+  final supervisor = ref.watch(voiceSupervisorProvider(serverId));
+  return supervisor.state;
 });
