@@ -172,6 +172,67 @@ class TmuxController {
     return sessions;
   }
 
+  /// Delimiter used to separate outputs from different sessions in batch
+  /// capture commands.
+  static const batchDelimiter = '<<<MURMINAL_SESSION_BOUNDARY>>>';
+
+  /// Capture pane output from multiple sessions in a single SSH exec call.
+  ///
+  /// Returns a map of session name to captured output. Sessions that fail
+  /// to capture (e.g., killed externally) are omitted from the result.
+  ///
+  /// Throws [TmuxCommandException] if the SSH exec itself fails entirely
+  /// (e.g., connection dropped).
+  Future<Map<String, String>> batchCapturePane(
+    List<String> sessions, {
+    int lines = 50,
+  }) async {
+    if (sessions.isEmpty) return {};
+    if (sessions.length == 1) {
+      final output = await capturePane(sessions.first, lines: lines);
+      return {sessions.first: output};
+    }
+
+    // Build a shell script that captures each session and separates
+    // outputs with a known delimiter.
+    final buffer = StringBuffer();
+    for (var i = 0; i < sessions.length; i++) {
+      final fullName = '$sessionPrefix${sessions[i]}';
+      if (i > 0) {
+        buffer.write('echo "$batchDelimiter"; ');
+      }
+      buffer.write(
+        'tmux capture-pane -t "$fullName" -p -S -$lines 2>/dev/null; ',
+      );
+    }
+
+    final cmd = buffer.toString();
+    try {
+      final rawOutput = await _ssh.execute(cmd);
+      return _parseBatchOutput(sessions, rawOutput);
+    } catch (e) {
+      throw TmuxCommandException(
+        command: cmd,
+        message: 'Batch capture failed: $e',
+      );
+    }
+  }
+
+  /// Parse the raw output of a batch capture command into per-session outputs.
+  Map<String, String> _parseBatchOutput(
+    List<String> sessions,
+    String rawOutput,
+  ) {
+    final parts = rawOutput.split(batchDelimiter);
+    final result = <String, String>{};
+
+    for (var i = 0; i < sessions.length && i < parts.length; i++) {
+      result[sessions[i]] = parts[i].trim();
+    }
+
+    return result;
+  }
+
   /// Escape special characters for safe use inside tmux send-keys.
   String _escapeForTmux(String input) {
     return input
