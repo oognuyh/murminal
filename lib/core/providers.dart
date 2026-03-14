@@ -12,6 +12,7 @@ import 'package:murminal/data/services/mic_service.dart';
 import 'package:murminal/data/services/output_monitor.dart';
 import 'package:murminal/data/services/ssh_service.dart';
 import 'package:murminal/data/services/tmux_controller.dart';
+import 'package:murminal/data/services/tool_executor.dart';
 import 'package:murminal/data/services/voice/qwen_realtime_service.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
 import 'package:murminal/data/services/voice_supervisor.dart';
@@ -124,13 +125,20 @@ final outputMonitorProvider = Provider<OutputMonitor>((ref) {
 /// Creates the full voice-to-terminal pipeline for the given server.
 final voiceSupervisorProvider =
     Provider.family<VoiceSupervisor, String>((ref, serverId) {
+  final tmux = ref.watch(tmuxControllerProvider);
+  final sessionSvc = ref.watch(sessionServiceProvider);
+  final toolExecutor = ToolExecutor(
+    tmux: tmux,
+    sessionService: sessionSvc,
+    serverId: serverId,
+  );
   final supervisor = VoiceSupervisor(
     voiceService: ref.watch(realtimeVoiceServiceProvider),
     audioSession: ref.watch(audioSessionServiceProvider),
     mic: ref.watch(micServiceProvider),
-    tmux: ref.watch(tmuxControllerProvider),
-    sessionService: ref.watch(sessionServiceProvider),
+    sessionService: sessionSvc,
     outputMonitor: ref.watch(outputMonitorProvider),
+    toolExecutor: toolExecutor,
     serverId: serverId,
   );
   ref.onDispose(supervisor.dispose);
