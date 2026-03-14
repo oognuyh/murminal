@@ -15,8 +15,18 @@ import 'package:murminal/data/services/tmux_controller.dart';
 import 'package:murminal/data/services/tool_executor.dart';
 import 'package:murminal/data/services/voice/qwen_realtime_service.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
+import 'package:murminal/data/services/engine_registry.dart';
 import 'package:murminal/data/services/voice_supervisor.dart';
 import 'package:murminal/data/models/voice_supervisor_state.dart';
+
+/// Singleton [EngineRegistry] for managing engine profiles.
+///
+/// Holds all loaded and runtime-registered [EngineProfile] instances.
+/// Call [EngineRegistry.loadBundledProfiles] at app startup to populate
+/// from bundled JSON assets.
+final engineRegistryProvider = Provider<EngineRegistry>((ref) {
+  return EngineRegistry();
+});
 
 /// Secure storage instance for API key management (BYOK).
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
