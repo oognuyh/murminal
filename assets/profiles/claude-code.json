@@ -1,0 +1,32 @@
+{
+  "name": "claude-code",
+  "display_name": "Claude Code",
+  "icon": "claude",
+  "type": "chat-tui",
+  "input_mode": "natural_language",
+  "launch": {
+    "command": "claude",
+    "flags": ["--dangerously-skip-permissions"],
+    "env": {}
+  },
+  "patterns": {
+    "ready": "❯\\s*$",
+    "thinking": "⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏",
+    "question": "\\(y\\/n\\)|\\(Y\\/n\\)|Yes\\/No|approve|permission",
+    "error": "Error:|error:|ERR!|FATAL|panic",
+    "complete": "✓|Done|completed|finished",
+    "tool_use": "\\b(Read|Write|Edit|Bash|Glob|Grep)\\b"
+  },
+  "states": {
+    "idle": { "indicator": "ready", "report": false },
+    "working": { "indicator": "thinking", "report": false },
+    "needs_input": { "indicator": "question", "report": true, "priority": "high" },
+    "error": { "indicator": "error", "report": true, "priority": "critical" },
+    "done": { "indicator": "complete", "report": true, "priority": "normal" }
+  },
+  "report_templates": {
+    "needs_input": "Confirmation required: {context}",
+    "error": "Error encountered: {context}",
+    "done": "Task completed: {context}"
+  }
+}
