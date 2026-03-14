@@ -1,0 +1,20 @@
+{
+  "name": "claude-code",
+  "displayName": "Claude Code",
+  "type": "chat-tui",
+  "inputMode": "natural_language",
+  "launchCommand": "claude",
+  "patterns": {
+    "prompt": "❯\\s|^\\$\\s",
+    "thinking": "⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏",
+    "complete": "✓|✔|Done|Complete",
+    "error": "Error:|error:|ERR!|FAIL|Failed",
+    "question": "\\(y\\/n\\)|\\(Y\\/n\\)|Yes\\/No|Continue\\?"
+  },
+  "reportTemplates": {
+    "complete": "Task completed successfully",
+    "error": "Error encountered: {summary}",
+    "question": "Waiting for input: {summary}",
+    "thinking": "Working on task..."
+  }
+}
