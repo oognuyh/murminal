@@ -10,6 +10,8 @@ import 'package:murminal/data/models/voice_supervisor_state.dart';
 import 'package:murminal/data/services/audio_session_service.dart';
 import 'package:murminal/data/services/mic_service.dart';
 import 'package:murminal/data/services/output_monitor.dart';
+import 'package:murminal/data/services/pattern_detector.dart';
+import 'package:murminal/data/services/report_generator.dart';
 import 'package:murminal/data/services/session_service.dart';
 import 'package:murminal/data/services/tmux_controller.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
@@ -36,6 +38,8 @@ class VoiceSupervisor {
   final TmuxController _tmux;
   final SessionService _sessionService;
   final OutputMonitor _outputMonitor;
+  final PatternDetector? _patternDetector;
+  final ReportGenerator? _reportGenerator;
 
   /// The server ID this supervisor is operating against.
   final String serverId;
@@ -56,12 +60,16 @@ class VoiceSupervisor {
     required SessionService sessionService,
     required OutputMonitor outputMonitor,
     required this.serverId,
+    PatternDetector? patternDetector,
+    ReportGenerator? reportGenerator,
   })  : _voiceService = voiceService,
         _audioSession = audioSession,
         _mic = mic,
         _tmux = tmux,
         _sessionService = sessionService,
-        _outputMonitor = outputMonitor;
+        _outputMonitor = outputMonitor,
+        _patternDetector = patternDetector,
+        _reportGenerator = reportGenerator;
 
   /// Stream of supervisor state changes for UI binding.
   Stream<VoiceSupervisorState> get state => _stateController.stream;
@@ -371,10 +379,13 @@ class VoiceSupervisor {
 
   /// Handles output changes detected by [OutputMonitor].
   ///
-  /// Generates a concise text report of what changed and injects it into
-  /// the Realtime API input buffer as a text-based report. The system
-  /// prompt instructs the model to relay [REPORT]-prefixed content as
-  /// spoken system monitor updates.
+  /// Uses [PatternDetector] to classify the output change and
+  /// [ReportGenerator] to produce a `[REPORT]`-prefixed message.
+  /// The report is injected into the Realtime API input audio buffer
+  /// so the voice model can relay it naturally to the user.
+  ///
+  /// Falls back to a simple diff-based report when no pattern detector
+  /// or report generator is configured.
   void _onOutputChange(OutputChangeEvent event) {
     if (_currentState == VoiceSupervisorState.idle ||
         _currentState == VoiceSupervisorState.error) {
@@ -382,9 +393,11 @@ class VoiceSupervisor {
     }
 
     final report = _buildOutputReport(event);
-    // Encode the report as UTF-8 PCM-like text data for the model to read.
-    // Since we cannot synthesize TTS locally, we send the text report as
-    // audio-buffer content that the model's system prompt knows to relay.
+    if (report == null) return;
+
+    // Encode the report as UTF-8 text data for the Realtime API.
+    // The model's system prompt instructs it to relay [REPORT]-prefixed
+    // content as spoken status updates.
     final reportBytes = Uint8List.fromList(utf8.encode(report));
     _voiceService.injectAudioReport(reportBytes);
 
@@ -395,7 +408,23 @@ class VoiceSupervisor {
   }
 
   /// Builds a human-readable report from an output change event.
-  String _buildOutputReport(OutputChangeEvent event) {
+  ///
+  /// When a [PatternDetector] is available, the output is classified into
+  /// a [DetectedState] (complete, error, question, thinking) and the
+  /// [ReportGenerator] produces a templated report. If no pattern matches
+  /// or no detector is configured, falls back to a raw diff report.
+  String? _buildOutputReport(OutputChangeEvent event) {
+    if (_patternDetector != null && _reportGenerator != null) {
+      final detected = _patternDetector.detect(event.currentOutput);
+      if (detected != null) {
+        return _reportGenerator.generateReport(detected, event.currentOutput);
+      }
+      // No pattern matched — output is idle / unchanged semantically.
+      // Skip reporting to avoid noise.
+      return null;
+    }
+
+    // Fallback: simple diff-based report when no profile is configured.
     final buffer = StringBuffer('[REPORT] Session "${event.sessionName}" ');
     buffer.writeln('output changed:');
     buffer.writeln(event.diff);
