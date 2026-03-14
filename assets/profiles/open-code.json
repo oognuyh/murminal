@@ -1,0 +1,45 @@
+{
+  "name": "open-code",
+  "display_name": "Open Code",
+  "type": "chat-tui",
+  "input_mode": "natural_language",
+  "launch": {
+    "command": "open-code",
+    "flags": [],
+    "env": {}
+  },
+  "patterns": {
+    "prompt": "^>\\s|❯\\s",
+    "thinking": "Thinking\\.\\.\\.|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Generating\\.\\.\\.",
+    "complete": "✓|Done|Applied|Changes written|Completed",
+    "error": "Error:|error:|ERR!|FAIL|Failed|Exception|panic",
+    "question": "\\(y\\/n\\)|\\(Y\\/n\\)|Confirm\\?|Continue\\?|Proceed\\?"
+  },
+  "states": {
+    "thinking": {
+      "indicator": "spinner",
+      "report": false
+    },
+    "complete": {
+      "indicator": "checkmark",
+      "report": true,
+      "priority": "normal"
+    },
+    "error": {
+      "indicator": "error_text",
+      "report": true,
+      "priority": "high"
+    },
+    "question": {
+      "indicator": "prompt_text",
+      "report": true,
+      "priority": "high"
+    }
+  },
+  "report_templates": {
+    "complete": "Task completed successfully",
+    "error": "Error encountered: {summary}",
+    "question": "Waiting for input: {summary}",
+    "thinking": "Open Code is working..."
+  }
+}

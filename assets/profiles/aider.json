@@ -1,0 +1,46 @@
+{
+  "name": "aider",
+  "display_name": "Aider",
+  "type": "chat-tui",
+  "input_mode": "natural_language",
+  "launch": {
+    "command": "aider",
+    "flags": [],
+    "env": {}
+  },
+  "patterns": {
+    "prompt": "^>\\s|^aider>\\s",
+    "thinking": "Thinking\\.\\.\\.|Sending\\.\\.\\.|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏",
+    "complete": "Applied edit|Commit [0-9a-f]+|wrote\\s",
+    "error": "Error:|Can't|Unable to|FileNotFoundError|SyntaxError|not found",
+    "question": "\\(y\\/n\\)|\\(Y\\/n\\)|Add .+ to the chat\\?|Create .+\\?|Drop .+\\?",
+    "slash_command": "^\\/(add|drop|run|test|undo|diff|commit|clear|help|model|map)\\b"
+  },
+  "states": {
+    "thinking": {
+      "indicator": "spinner",
+      "report": false
+    },
+    "complete": {
+      "indicator": "checkmark",
+      "report": true,
+      "priority": "normal"
+    },
+    "error": {
+      "indicator": "error_text",
+      "report": true,
+      "priority": "high"
+    },
+    "question": {
+      "indicator": "prompt_text",
+      "report": true,
+      "priority": "high"
+    }
+  },
+  "report_templates": {
+    "complete": "Edit applied successfully",
+    "error": "Error encountered: {summary}",
+    "question": "Waiting for confirmation: {summary}",
+    "thinking": "Aider is working..."
+  }
+}
