@@ -1,0 +1,23 @@
+{
+  "name": "raw-shell",
+  "display_name": "Shell",
+  "type": "raw-shell",
+  "input_mode": "command",
+  "launch": {
+    "command": null
+  },
+  "patterns": {
+    "ready": "\\$\\s*$|#\\s*$|❯\\s*$|>\\s*$",
+    "thinking": null,
+    "question": "\\(y\\/n\\)|\\[Y/n\\]|password:",
+    "error": "command not found|Permission denied|No such file|not recognized",
+    "complete": null
+  },
+  "states": {
+    "idle": { "indicator": "ready", "report": false },
+    "error": { "indicator": "error", "report": true, "priority": "critical" }
+  },
+  "report_templates": {
+    "error": "Command failed: {context}"
+  }
+}
