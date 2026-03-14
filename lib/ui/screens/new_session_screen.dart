@@ -177,7 +177,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
         ),
         const SizedBox(height: 8),
         DropdownButtonFormField<T>(
-          value: value,
+          initialValue: value,
           validator: validator,
           onChanged: onChanged,
           dropdownColor: _surface,
