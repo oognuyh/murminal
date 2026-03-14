@@ -1,6 +1,5 @@
 import 'dart:developer' as developer;
 
-import 'package:murminal/data/models/session.dart';
 import 'package:murminal/data/models/tool_result.dart';
 import 'package:murminal/data/models/voice_event.dart';
 import 'package:murminal/data/services/session_service.dart';
