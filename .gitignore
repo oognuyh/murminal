@@ -1,0 +1,8 @@
+# Not yet
+.claude/
+CLAUDE.md
+docs/
+
+.DS_Store
+
+.env

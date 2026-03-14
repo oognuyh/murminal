@@ -1,0 +1,53 @@
+name: Feature
+description: New feature or enhancement
+title: "[Feature]: "
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: "## Feature Request"
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Brief description of the feature
+      placeholder: What should be built?
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation
+      description: Why is this needed?
+      placeholder: What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know this is done?
+      placeholder: |
+        - [ ] Criterion 1
+        - [ ] Criterion 2
+    validations:
+      required: true
+  - type: textarea
+    id: technical-notes
+    attributes:
+      label: Technical Notes
+      description: Implementation hints, related docs, dependencies
+      placeholder: See docs/04-ssh-tmux.md
+    validations:
+      required: false
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - Phase 1
+        - Phase 2
+        - Phase 3
+        - Phase 4
+    validations:
+      required: true

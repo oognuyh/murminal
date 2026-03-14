@@ -1,0 +1,37 @@
+name: Discussion
+description: Design decision, architecture question, or open discussion
+title: "[Discussion]: "
+labels: ["discussion"]
+body:
+  - type: markdown
+    attributes:
+      value: "## Discussion"
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Background and current situation
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options Considered
+      description: What alternatives exist?
+      placeholder: |
+        **Option A:**
+        - Pros:
+        - Cons:
+
+        **Option B:**
+        - Pros:
+        - Cons:
+    validations:
+      required: false
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Recommended approach and reasoning
+    validations:
+      required: false
