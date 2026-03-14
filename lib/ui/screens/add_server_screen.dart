@@ -226,7 +226,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
         child: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
             children: [
               _buildTextField(
                 controller: _labelController,
@@ -325,7 +325,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           label,
           style: const TextStyle(
             color: _textSecondary,
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
             letterSpacing: 0.5,
           ),
@@ -338,35 +338,35 @@ class _AddServerScreenState extends State<AddServerScreen> {
           inputFormatters: inputFormatters,
           obscureText: obscureText,
           textInputAction: textInputAction,
-          style: const TextStyle(color: _textPrimary, fontSize: 15),
+          style: const TextStyle(color: _textPrimary, fontFamily: 'JetBrains Mono', fontSize: 13),
           cursorColor: _accent,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(color: _textMuted, fontSize: 15),
+            hintStyle: const TextStyle(color: _textMuted, fontFamily: 'JetBrains Mono', fontSize: 13),
             filled: true,
             fillColor: _surface,
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
-              vertical: 14,
+              vertical: 12,
             ),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
               borderSide: const BorderSide(color: _surfaceBorder),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
               borderSide: const BorderSide(color: _surfaceBorder),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
               borderSide: const BorderSide(color: _accent, width: 1.5),
             ),
             errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
               borderSide: const BorderSide(color: _errorRed),
             ),
             focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(8),
               borderSide: const BorderSide(color: _errorRed, width: 1.5),
             ),
             errorStyle: const TextStyle(color: _errorRed, fontSize: 12),
@@ -384,7 +384,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           'Authentication',
           style: TextStyle(
             color: _textSecondary,
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
             letterSpacing: 0.5,
           ),
@@ -393,7 +393,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
         Container(
           decoration: BoxDecoration(
             color: _surface,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: _surfaceBorder),
           ),
           child: Row(
@@ -434,20 +434,17 @@ class _AddServerScreenState extends State<AddServerScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? _accent.withValues(alpha: 0.15) : Colors.transparent,
+          color: isSelected ? _accent : Colors.transparent,
           borderRadius: BorderRadius.horizontal(
-            left: isFirst ? const Radius.circular(9) : Radius.zero,
-            right: isFirst ? Radius.zero : const Radius.circular(9),
+            left: isFirst ? const Radius.circular(6) : Radius.zero,
+            right: isFirst ? Radius.zero : const Radius.circular(6),
           ),
-          border: isSelected
-              ? Border.all(color: _accent.withValues(alpha: 0.4))
-              : null,
         ),
         alignment: Alignment.center,
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? _accent : _textMuted,
+            color: isSelected ? const Color(0xFF0A0F1C) : _textMuted,
             fontSize: 14,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
           ),
@@ -464,7 +461,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           'Private Key File',
           style: TextStyle(
             color: _textSecondary,
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
             letterSpacing: 0.5,
           ),
@@ -487,19 +484,19 @@ class _AddServerScreenState extends State<AddServerScreen> {
                     vertical: 14,
                   ),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(color: _surfaceBorder),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(color: _surfaceBorder),
                   ),
                   focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(color: _accent, width: 1.5),
                   ),
                   errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                     borderSide: const BorderSide(color: _errorRed),
                   ),
                   errorStyle: const TextStyle(
@@ -524,7 +521,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
                   backgroundColor: _surface,
                   foregroundColor: _accent,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                     side: const BorderSide(color: _surfaceBorder),
                   ),
                   elevation: 0,
@@ -592,7 +589,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           foregroundColor: _accent,
           side: const BorderSide(color: _accent),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
           ),
         ),
       ),
@@ -601,7 +598,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
 
   Widget _buildSaveButton() {
     return SizedBox(
-      height: 50,
+      height: 48,
       child: ElevatedButton(
         onPressed: _isSaving ? null : _saveServer,
         style: ElevatedButton.styleFrom(
@@ -609,7 +606,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           foregroundColor: _background,
           disabledBackgroundColor: _accent.withValues(alpha: 0.4),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
           ),
           elevation: 0,
         ),
