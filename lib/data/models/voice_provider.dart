@@ -20,7 +20,7 @@ extension VoiceProviderExtension on VoiceProvider {
   /// Base WebSocket URL for the provider's Realtime API.
   String get baseUrl => switch (this) {
         VoiceProvider.qwen =>
-          'wss://dashscope.aliyuncs.com/api-ws/v1/inference',
+          'wss://dashscope-intl.aliyuncs.com/api-ws/v1/inference',
         VoiceProvider.gemini =>
           'wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent',
         VoiceProvider.openai => 'wss://api.openai.com/v1/realtime',
