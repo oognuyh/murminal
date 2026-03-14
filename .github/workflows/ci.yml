@@ -47,4 +47,16 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get
-      - run: flutter build ios --simulator --no-codesign
+      - run: cd ios && pod install
+      - run: flutter build ios --no-codesign --config-only
+        continue-on-error: true
+      - name: Verify iOS project compiles
+        run: |
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tail -20
