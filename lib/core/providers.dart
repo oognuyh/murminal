@@ -3,8 +3,10 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:murminal/data/models/audio_session_state.dart';
+import 'package:murminal/data/models/server_config.dart';
 import 'package:murminal/data/models/session.dart';
 import 'package:murminal/data/models/voice_provider.dart';
+import 'package:murminal/data/repositories/server_repository.dart';
 import 'package:murminal/data/repositories/session_repository.dart';
 import 'package:murminal/data/services/audio_session_service.dart';
 import 'package:murminal/data/services/session_service.dart';
@@ -70,6 +72,18 @@ final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
   throw UnimplementedError(
     'sharedPreferencesProvider must be overridden with a real instance',
   );
+});
+
+/// Server repository for SSH server configuration persistence.
+final serverRepositoryProvider = Provider<ServerRepository>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return ServerRepository(prefs);
+});
+
+/// All saved server configurations, refreshable.
+final serverListProvider = Provider<List<ServerConfig>>((ref) {
+  final repository = ref.watch(serverRepositoryProvider);
+  return repository.getAll();
 });
 
 /// SSH service provider. One instance per server connection.
