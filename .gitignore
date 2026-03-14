@@ -1,8 +1,53 @@
-# Not yet
+# Project-specific
 .claude/
 CLAUDE.md
 docs/
 
-.DS_Store
+# Flutter/Dart
+*.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.dart_tool/
+pubspec.lock
 
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Runner.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# Android (future)
+**/android/**/gradle-wrapper.jar
+.gradle/
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
+*.jks
+
+# Generated
+*.g.dart
+*.freezed.dart
+*.mocks.dart
+lib/generated_plugin_registrant.dart
+
+# Environment
 .env
+.env.*
+
+# Coverage
+coverage/
