@@ -6,10 +6,11 @@ const _activeColor = Color(0xFF22D3EE);
 const _inactiveColor = Color(0xFF475569);
 const _fabSize = 60.0;
 const _fabIconSize = 26.0;
-const _pillHeight = 64.0;
-const _pillRadius = 32.0;
+const _pillHeight = 62.0;
+const _pillRadius = 36.0;
+const _pillBorderColor = Color(0xFF0F172A);
 const _tabFontSize = 10.0;
-const _tabIconSize = 20.0;
+const _tabIconSize = 18.0;
 
 /// Tab definition for the bottom navigation bar.
 class _TabItem {
@@ -71,10 +72,11 @@ class BottomNavBar extends StatelessWidget {
   Widget _buildPill() {
     return Container(
       height: _pillHeight,
-      margin: const EdgeInsets.symmetric(horizontal: 20),
+      margin: const EdgeInsets.symmetric(horizontal: 21),
       decoration: BoxDecoration(
         color: _pillColor,
         borderRadius: BorderRadius.circular(_pillRadius),
+        border: Border.all(color: _pillBorderColor, width: 1),
       ),
       child: Row(
         children: [
@@ -104,7 +106,7 @@ class BottomNavBar extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
         decoration: BoxDecoration(
           color: isActive ? _activeColor : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(26),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -121,7 +123,7 @@ class BottomNavBar extends StatelessWidget {
               style: TextStyle(
                 fontFamily: 'JetBrains Mono',
                 fontSize: _tabFontSize,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                 color: isActive ? const Color(0xFF0A0F1C) : _inactiveColor,
                 letterSpacing: 0.5,
               ),
@@ -143,7 +145,7 @@ class BottomNavBar extends StatelessWidget {
           shape: BoxShape.circle,
           boxShadow: [
             BoxShadow(
-              color: _activeColor.withValues(alpha: 0.4),
+              color: _activeColor.withValues(alpha: 0.33),
               blurRadius: 16,
               spreadRadius: 2,
             ),
