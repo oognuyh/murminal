@@ -12,6 +12,7 @@ import 'package:murminal/data/services/audio_session_service.dart';
 import 'package:murminal/data/services/session_service.dart';
 import 'package:murminal/data/services/mic_service.dart';
 import 'package:murminal/data/services/output_monitor.dart';
+import 'package:murminal/data/services/ssh_connection_pool.dart';
 import 'package:murminal/data/services/ssh_service.dart';
 import 'package:murminal/data/services/tmux_controller.dart';
 import 'package:murminal/data/services/tool_executor.dart';
@@ -84,6 +85,22 @@ final serverRepositoryProvider = Provider<ServerRepository>((ref) {
 final serverListProvider = Provider<List<ServerConfig>>((ref) {
   final repository = ref.watch(serverRepositoryProvider);
   return repository.getAll();
+});
+
+/// SSH connection pool for managing multiple server connections.
+///
+/// Provides lazy connection, health monitoring, and connection limits.
+final sshConnectionPoolProvider = Provider<SshConnectionPool>((ref) {
+  final pool = SshConnectionPool();
+  ref.onDispose(pool.dispose);
+  return pool;
+});
+
+/// Stream of connection state changes across all pooled servers.
+final poolConnectionStatesProvider =
+    StreamProvider<Map<String, ConnectionState>>((ref) {
+  final pool = ref.watch(sshConnectionPoolProvider);
+  return pool.connectionStates;
 });
 
 /// SSH service provider. One instance per server connection.
