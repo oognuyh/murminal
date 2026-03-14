@@ -13,7 +13,7 @@ import 'package:murminal/data/services/output_monitor.dart';
 import 'package:murminal/data/services/pattern_detector.dart';
 import 'package:murminal/data/services/report_generator.dart';
 import 'package:murminal/data/services/session_service.dart';
-import 'package:murminal/data/services/tmux_controller.dart';
+import 'package:murminal/data/services/tool_executor.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
 
 /// Core voice-to-terminal-to-voice pipeline supervisor.
@@ -35,11 +35,11 @@ class VoiceSupervisor {
   final RealtimeVoiceService _voiceService;
   final AudioSessionService _audioSession;
   final MicService _mic;
-  final TmuxController _tmux;
   final SessionService _sessionService;
   final OutputMonitor _outputMonitor;
   final PatternDetector? _patternDetector;
   final ReportGenerator? _reportGenerator;
+  final ToolExecutor _toolExecutor;
 
   /// The server ID this supervisor is operating against.
   final String serverId;
@@ -56,20 +56,20 @@ class VoiceSupervisor {
     required RealtimeVoiceService voiceService,
     required AudioSessionService audioSession,
     required MicService mic,
-    required TmuxController tmux,
     required SessionService sessionService,
     required OutputMonitor outputMonitor,
+    required ToolExecutor toolExecutor,
     required this.serverId,
     PatternDetector? patternDetector,
     ReportGenerator? reportGenerator,
   })  : _voiceService = voiceService,
         _audioSession = audioSession,
         _mic = mic,
-        _tmux = tmux,
         _sessionService = sessionService,
         _outputMonitor = outputMonitor,
         _patternDetector = patternDetector,
-        _reportGenerator = reportGenerator;
+        _reportGenerator = reportGenerator,
+        _toolExecutor = toolExecutor;
 
   /// Stream of supervisor state changes for UI binding.
   Stream<VoiceSupervisorState> get state => _stateController.stream;
@@ -281,10 +281,11 @@ class VoiceSupervisor {
   // Tool call dispatch
   // ---------------------------------------------------------------------------
 
-  /// Dispatches a tool call from the voice model to the correct service.
+  /// Dispatches a tool call from the voice model to [ToolExecutor].
   ///
   /// After execution, sends the result back to the Realtime API and
   /// refreshes the system prompt so subsequent turns have fresh state.
+  /// For session lifecycle tools, also manages output monitoring.
   Future<void> _handleToolCall(ToolCallRequest request) async {
     _setState(VoiceSupervisorState.processing);
     developer.log(
@@ -292,15 +293,27 @@ class VoiceSupervisor {
       name: _tag,
     );
 
-    String result;
-    try {
-      result = await _dispatchTool(request.name, request.arguments);
-    } catch (e) {
-      result = jsonEncode({'error': e.toString()});
+    final toolResult = await _toolExecutor.execute(request);
+
+    // Manage output monitoring for session lifecycle tools.
+    if (toolResult.success) {
+      switch (request.name) {
+        case 'create_session':
+          final decoded = jsonDecode(toolResult.output) as Map<String, dynamic>;
+          final sessionId = decoded['session_id'] as String?;
+          if (sessionId != null) {
+            _outputMonitor.startMonitoring(sessionId);
+          }
+        case 'kill_session':
+          final sessionName = request.arguments['session_name'] as String?;
+          if (sessionName != null) {
+            _outputMonitor.stopMonitoring(sessionName);
+          }
+      }
     }
 
     // Return the tool result to the model.
-    _voiceService.sendToolResult(request.callId, result);
+    _voiceService.sendToolResult(request.callId, toolResult.output);
 
     // Refresh the system prompt with updated state after the tool execution.
     try {
@@ -308,68 +321,6 @@ class VoiceSupervisor {
       await _voiceService.updateSystemPrompt(prompt);
     } catch (e) {
       developer.log('Failed to refresh system prompt: $e', name: _tag);
-    }
-  }
-
-  /// Routes a tool call by name to the appropriate service method.
-  Future<String> _dispatchTool(
-    String name,
-    Map<String, dynamic> args,
-  ) async {
-    switch (name) {
-      case 'send_command':
-        final sessionName = args['session_name'] as String;
-        final command = args['command'] as String;
-        await _tmux.sendKeys(sessionName, command);
-        // Wait briefly for command output to appear, then capture.
-        await Future<void>.delayed(const Duration(milliseconds: 500));
-        final output = await _tmux.capturePane(sessionName);
-        return jsonEncode({'output': output});
-
-      case 'get_session_status':
-        final sessionName = args['session_name'] as String;
-        final lines = args['lines'] as int? ?? 50;
-        final output =
-            await _tmux.capturePane(sessionName, lines: lines);
-        return jsonEncode({'output': output});
-
-      case 'list_sessions':
-        final sessions = await _sessionService.listSessions(serverId);
-        final sessionList = sessions
-            .map((s) => {
-                  'id': s.id,
-                  'name': s.name,
-                  'engine': s.engine,
-                  'status': s.status.name,
-                })
-            .toList();
-        return jsonEncode({'sessions': sessionList});
-
-      case 'create_session':
-        final name = args['name'] as String;
-        final command = args['command'] as String?;
-        final session = await _sessionService.createSession(
-          serverId: serverId,
-          engine: 'shell',
-          name: name,
-          launchCommand: command,
-        );
-        // Start monitoring the newly created session for output changes.
-        _outputMonitor.startMonitoring(session.id);
-        return jsonEncode({
-          'session_id': session.id,
-          'name': session.name,
-          'status': session.status.name,
-        });
-
-      case 'kill_session':
-        final sessionName = args['session_name'] as String;
-        _outputMonitor.stopMonitoring(sessionName);
-        await _sessionService.terminateSession(sessionName);
-        return jsonEncode({'killed': sessionName});
-
-      default:
-        return jsonEncode({'error': 'Unknown tool: $name'});
     }
   }
 
