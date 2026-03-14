@@ -5,7 +5,7 @@ import 'package:murminal/data/services/report_queue.dart';
 void main() {
   late ReportQueue queue;
 
-  ReportEvent _event({
+  ReportEvent makeEvent({
     ReportPriority priority = ReportPriority.normal,
     String sessionId = 'dev',
     String message = 'test',
@@ -61,7 +61,7 @@ void main() {
     });
 
     test('toString includes priority and session', () {
-      final event = _event(
+      final event = makeEvent(
         priority: ReportPriority.critical,
         sessionId: 'prod',
         message: 'server down',
@@ -77,7 +77,7 @@ void main() {
       final events = <ReportEvent>[];
       queue.reports.listen(events.add);
 
-      queue.enqueue(_event(message: 'hello'));
+      queue.enqueue(makeEvent(message: 'hello'));
 
       // Allow microtask to propagate.
       await Future<void>.delayed(Duration.zero);
@@ -90,9 +90,9 @@ void main() {
       // Pause first so we can enqueue multiple items before draining.
       queue.onUserSpeechStarted();
 
-      queue.enqueue(_event(priority: ReportPriority.low, message: 'low'));
-      queue.enqueue(_event(priority: ReportPriority.high, message: 'high'));
-      queue.enqueue(_event(priority: ReportPriority.normal, message: 'normal'));
+      queue.enqueue(makeEvent(priority: ReportPriority.low, message: 'low'));
+      queue.enqueue(makeEvent(priority: ReportPriority.high, message: 'high'));
+      queue.enqueue(makeEvent(priority: ReportPriority.normal, message: 'normal'));
 
       final events = <ReportEvent>[];
       queue.reports.listen(events.add);
@@ -111,9 +111,9 @@ void main() {
     test('FIFO order within same priority', () async {
       queue.onUserSpeechStarted();
 
-      queue.enqueue(_event(priority: ReportPriority.normal, message: 'first'));
-      queue.enqueue(_event(priority: ReportPriority.normal, message: 'second'));
-      queue.enqueue(_event(priority: ReportPriority.normal, message: 'third'));
+      queue.enqueue(makeEvent(priority: ReportPriority.normal, message: 'first'));
+      queue.enqueue(makeEvent(priority: ReportPriority.normal, message: 'second'));
+      queue.enqueue(makeEvent(priority: ReportPriority.normal, message: 'third'));
 
       final events = <ReportEvent>[];
       queue.reports.listen(events.add);
@@ -131,9 +131,9 @@ void main() {
       queue.onUserSpeechStarted();
 
       expect(queue.pendingCount, 0);
-      queue.enqueue(_event(message: 'a'));
+      queue.enqueue(makeEvent(message: 'a'));
       expect(queue.pendingCount, 1);
-      queue.enqueue(_event(message: 'b'));
+      queue.enqueue(makeEvent(message: 'b'));
       expect(queue.pendingCount, 2);
     });
   });
@@ -146,7 +146,7 @@ void main() {
       final events = <ReportEvent>[];
       queue.reports.listen(events.add);
 
-      queue.enqueue(_event(message: 'queued'));
+      queue.enqueue(makeEvent(message: 'queued'));
 
       await Future<void>.delayed(Duration.zero);
 
@@ -161,8 +161,8 @@ void main() {
       final events = <ReportEvent>[];
       queue.reports.listen(events.add);
 
-      queue.enqueue(_event(priority: ReportPriority.high, message: 'urgent'));
-      queue.enqueue(_event(priority: ReportPriority.low, message: 'info'));
+      queue.enqueue(makeEvent(priority: ReportPriority.high, message: 'urgent'));
+      queue.enqueue(makeEvent(priority: ReportPriority.low, message: 'info'));
 
       await Future<void>.delayed(Duration.zero);
       expect(events, isEmpty);
@@ -183,14 +183,14 @@ void main() {
 
       // First cycle.
       queue.onUserSpeechStarted();
-      queue.enqueue(_event(message: 'a'));
+      queue.enqueue(makeEvent(message: 'a'));
       queue.onUserSpeechEnded();
       await Future<void>.delayed(Duration.zero);
       expect(events, hasLength(1));
 
       // Second cycle.
       queue.onUserSpeechStarted();
-      queue.enqueue(_event(message: 'b'));
+      queue.enqueue(makeEvent(message: 'b'));
       queue.onUserSpeechEnded();
       await Future<void>.delayed(Duration.zero);
       expect(events, hasLength(2));
@@ -204,7 +204,7 @@ void main() {
       final events = <ReportEvent>[];
       queue.reports.listen(events.add);
 
-      queue.enqueue(_event(
+      queue.enqueue(makeEvent(
         priority: ReportPriority.critical,
         message: 'error!',
       ));
@@ -223,9 +223,9 @@ void main() {
       final events = <ReportEvent>[];
       queue.reports.listen(events.add);
 
-      queue.enqueue(_event(priority: ReportPriority.normal, message: 'pending'));
+      queue.enqueue(makeEvent(priority: ReportPriority.normal, message: 'pending'));
       queue.enqueue(
-        _event(priority: ReportPriority.critical, message: 'critical'),
+        makeEvent(priority: ReportPriority.critical, message: 'critical'),
       );
 
       await Future<void>.delayed(Duration.zero);
@@ -241,7 +241,7 @@ void main() {
       queue.reports.listen(events.add);
 
       queue.enqueue(
-        _event(priority: ReportPriority.critical, message: 'immediate'),
+        makeEvent(priority: ReportPriority.critical, message: 'immediate'),
       );
 
       await Future<void>.delayed(Duration.zero);
@@ -255,8 +255,8 @@ void main() {
     test('clear removes all pending events', () {
       queue.onUserSpeechStarted();
 
-      queue.enqueue(_event(message: 'a'));
-      queue.enqueue(_event(message: 'b'));
+      queue.enqueue(makeEvent(message: 'a'));
+      queue.enqueue(makeEvent(message: 'b'));
       expect(queue.pendingCount, 2);
 
       queue.clear();
@@ -267,7 +267,7 @@ void main() {
       queue.dispose();
 
       // Enqueue after dispose should be a no-op.
-      queue.enqueue(_event(message: 'ignored'));
+      queue.enqueue(makeEvent(message: 'ignored'));
       expect(queue.pendingCount, 0);
     });
 
@@ -280,7 +280,7 @@ void main() {
 
       queue.dispose();
 
-      queue.enqueue(_event(message: 'late'));
+      queue.enqueue(makeEvent(message: 'late'));
       await Future<void>.delayed(Duration.zero);
 
       expect(events, isEmpty);
@@ -291,12 +291,12 @@ void main() {
     test('interleaved priorities drain correctly', () async {
       queue.onUserSpeechStarted();
 
-      queue.enqueue(_event(priority: ReportPriority.normal, message: 'n1'));
-      queue.enqueue(_event(priority: ReportPriority.low, message: 'l1'));
-      queue.enqueue(_event(priority: ReportPriority.high, message: 'h1'));
-      queue.enqueue(_event(priority: ReportPriority.normal, message: 'n2'));
-      queue.enqueue(_event(priority: ReportPriority.high, message: 'h2'));
-      queue.enqueue(_event(priority: ReportPriority.low, message: 'l2'));
+      queue.enqueue(makeEvent(priority: ReportPriority.normal, message: 'n1'));
+      queue.enqueue(makeEvent(priority: ReportPriority.low, message: 'l1'));
+      queue.enqueue(makeEvent(priority: ReportPriority.high, message: 'h1'));
+      queue.enqueue(makeEvent(priority: ReportPriority.normal, message: 'n2'));
+      queue.enqueue(makeEvent(priority: ReportPriority.high, message: 'h2'));
+      queue.enqueue(makeEvent(priority: ReportPriority.low, message: 'l2'));
 
       final events = <ReportEvent>[];
       queue.reports.listen(events.add);
