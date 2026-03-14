@@ -1,0 +1,28 @@
+# AGENTS.md
+- These instructions apply to the entire repository unless a deeper `AGENTS.md` overrides them.
+- `murminal` is a Flutter application.
+- Core architecture is MVVM + Clean Architecture with Riverpod.
+- Main code lives in `lib/`, with supporting design and architecture docs in `docs/`.
+- Read `CLAUDE.md` before making non-trivial changes.
+- Use `docs/09-flutter-architecture.md` for architectural decisions.
+- Use `docs/01-overview.md` and `docs/02-architecture.md` for product and system context.
+- Keep all project-managed content in English.
+- Documentation in `docs/` may be written in Korean or English.
+- Prefer changes in `lib/ui/`, `lib/domain/`, and `lib/data/` that preserve layer boundaries.
+- Keep dependencies flowing inward: UI -> ViewModel -> Repository -> Service.
+- Avoid mixing SSH, voice, session, and UI concerns in a single class when a focused abstraction is possible.
+- Prefer targeted changes over broad refactors.
+- Do not edit generated or dependency-managed files unless the task explicitly requires it.
+- Avoid manual edits in `build/`, `.dart_tool/`, `ios/Pods/`, and platform-generated Flutter files.
+- If code generation is needed, use the repository's existing tooling rather than hand-editing generated output.
+- For Dart or Flutter code changes, run the smallest relevant validation first.
+- Typical validation commands are `flutter analyze` and `flutter test`.
+- If a change affects generated Riverpod code, regenerate before validating.
+- Follow Conventional Commits as documented in `CLAUDE.md`.
+- Never add AI attribution or `Co-Authored-By` lines to commits.
+- Keep changes atomic and scoped to the task.
+- Do not revert unrelated user changes.
+- Prefer ASCII unless a file already uses non-ASCII and there is a reason to keep it.
+- Reuse existing packages and patterns before introducing new dependencies.
+- Mirror existing test structure under `test/` when adding tests.
+- Update docs when behavior, architecture, or workflows materially change.

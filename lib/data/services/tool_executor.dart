@@ -62,6 +62,12 @@ class ToolExecutor {
         case 'kill_session':
           return await _killSession(request.arguments);
 
+        case 'switch_session':
+          return _switchSession(request.arguments);
+
+        case 'get_all_sessions':
+          return await _getAllSessions();
+
         default:
           return ToolResult.error(request.name, 'Unknown tool: ${request.name}');
       }
@@ -136,5 +142,36 @@ class ToolExecutor {
     await _sessionService.terminateSession(sessionName);
 
     return ToolResult.ok('kill_session', {'killed': sessionName});
+  }
+
+  /// Switch the focused session for voice commands.
+  ///
+  /// The [onSessionSwitch] callback is invoked with the new session ID,
+  /// allowing VoiceSupervisor to update its focused session state.
+  void Function(String sessionId)? onSessionSwitch;
+
+  ToolResult _switchSession(Map<String, dynamic> args) {
+    final sessionId = args['session_id'] as String;
+    onSessionSwitch?.call(sessionId);
+    return ToolResult.ok('switch_session', {
+      'switched_to': sessionId,
+      'message': 'Now focused on session $sessionId',
+    });
+  }
+
+  /// List all sessions across all servers for disambiguation.
+  Future<ToolResult> _getAllSessions() async {
+    final sessions = await _sessionService.listSessions();
+    final sessionList = sessions
+        .map((s) => {
+              'id': s.id,
+              'name': s.name,
+              'engine': s.engine,
+              'server_id': s.serverId,
+              'status': s.status.name,
+            })
+        .toList();
+
+    return ToolResult.ok('get_all_sessions', {'sessions': sessionList});
   }
 }
