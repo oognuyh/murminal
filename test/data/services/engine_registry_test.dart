@@ -149,33 +149,32 @@ void main() {
       expect(registry.getProfile('valid'), isNotNull);
     });
 
-    test('throws FormatException for missing required fields', () async {
+    test('records error for missing required fields', () async {
       final invalidJson = {'name': 'incomplete'};
       bundle = _FakeAssetBundle({
         'assets/profiles/bad.json': jsonEncode(invalidJson),
       });
 
-      expect(
-        () => registry.loadBundledProfiles(bundle),
-        throwsFormatException,
-      );
+      await registry.loadBundledProfiles(bundle);
+
+      expect(registry.profiles, isEmpty);
+      expect(registry.loadErrors, hasLength(1));
     });
 
-    test('validates all required fields are present', () async {
+    test('records error listing all missing fields', () async {
       // Missing display_name, type, input_mode
       final json = {'name': 'only-name'};
       bundle = _FakeAssetBundle({
         'assets/profiles/bad.json': jsonEncode(json),
       });
 
-      try {
-        await registry.loadBundledProfiles(bundle);
-        fail('Expected FormatException');
-      } on FormatException catch (e) {
-        expect(e.message, contains('display_name'));
-        expect(e.message, contains('type'));
-        expect(e.message, contains('input_mode'));
-      }
+      await registry.loadBundledProfiles(bundle);
+
+      expect(registry.profiles, isEmpty);
+      final error = registry.loadErrors['assets/profiles/bad.json']!;
+      expect(error, contains('display_name'));
+      expect(error, contains('type'));
+      expect(error, contains('input_mode'));
     });
   });
 }

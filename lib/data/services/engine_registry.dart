@@ -23,6 +23,19 @@ class EngineRegistry {
   /// Reads the asset manifest to discover profile files, validates
   /// each against the required schema, and registers valid profiles.
   /// Throws [FormatException] if a profile fails schema validation.
+  /// Profiles that failed to load during [loadBundledProfiles].
+  ///
+  /// Each entry maps the asset key to the error message. Useful for
+  /// diagnostics without crashing the app on a single bad profile.
+  final Map<String, String> loadErrors = {};
+
+  /// Loads bundled profile JSON files from `assets/profiles/`.
+  ///
+  /// Reads the asset manifest to discover profile files, validates
+  /// each against the required schema, and registers valid profiles.
+  /// Malformed profiles (invalid JSON, missing fields, wrong types)
+  /// are recorded in [loadErrors] and skipped so a single bad file
+  /// does not prevent the rest from loading.
   Future<void> loadBundledProfiles(AssetBundle bundle) async {
     final manifestJson = await bundle.loadString('AssetManifest.json');
     final manifest = jsonDecode(manifestJson) as Map<String, dynamic>;
@@ -31,11 +44,17 @@ class EngineRegistry {
         .where((key) => key.startsWith('assets/profiles/') && key.endsWith('.json'));
 
     for (final key in profileKeys) {
-      final jsonString = await bundle.loadString(key);
-      final json = jsonDecode(jsonString) as Map<String, dynamic>;
-      _validateSchema(json, key);
-      final profile = EngineProfile.fromJson(json);
-      _profiles[profile.name] = profile;
+      try {
+        final jsonString = await bundle.loadString(key);
+        final json = jsonDecode(jsonString) as Map<String, dynamic>;
+        _validateSchema(json, key);
+        final profile = EngineProfile.fromJson(json);
+        _profiles[profile.name] = profile;
+      } on FormatException catch (e) {
+        loadErrors[key] = e.message;
+      } on TypeError catch (e) {
+        loadErrors[key] = 'Type error in profile ($key): $e';
+      }
     }
   }
 
