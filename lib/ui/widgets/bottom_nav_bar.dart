@@ -9,7 +9,6 @@ const _fabIconSize = 26.0;
 const _pillHeight = 62.0;
 const _pillRadius = 36.0;
 const _pillBorderColor = Color(0xFF0F172A);
-const _tabFontSize = 10.0;
 const _tabIconSize = 18.0;
 
 /// Tab definition for the bottom navigation bar.
