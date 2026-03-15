@@ -31,7 +31,7 @@ const _tabs = [
 ///
 /// The bar renders as a floating pill with 4 tabs (2 on each side)
 /// and a protruding center FAB for the microphone action.
-class BottomNavBar extends StatelessWidget {
+class BottomNavBar extends StatefulWidget {
   /// Currently selected tab index (0-3).
   final int currentIndex;
 
@@ -41,12 +41,60 @@ class BottomNavBar extends StatelessWidget {
   /// Callback when the center FAB is tapped.
   final VoidCallback onMicPressed;
 
+  /// Whether a voice session is currently active.
+  ///
+  /// When true the FAB displays a pulsing cyan glow to indicate
+  /// the microphone is live.
+  final bool isVoiceActive;
+
   const BottomNavBar({
     super.key,
     required this.currentIndex,
     required this.onTabSelected,
     required this.onMicPressed,
+    this.isVoiceActive = false,
   });
+
+  @override
+  State<BottomNavBar> createState() => _BottomNavBarState();
+}
+
+class _BottomNavBarState extends State<BottomNavBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    );
+    _pulseAnimation = Tween<double>(begin: 0.33, end: 0.8).animate(
+      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+    );
+    if (widget.isVoiceActive) {
+      _pulseController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant BottomNavBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isVoiceActive && !oldWidget.isVoiceActive) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.isVoiceActive && oldWidget.isVoiceActive) {
+      _pulseController.stop();
+      _pulseController.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,10 +147,10 @@ class BottomNavBar extends StatelessWidget {
 
   Widget _buildTab(int index) {
     final tab = _tabs[index];
-    final isActive = currentIndex == index;
+    final isActive = widget.currentIndex == index;
 
     return GestureDetector(
-      onTap: () => onTabSelected(index),
+      onTap: () => widget.onTabSelected(index),
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -139,27 +187,35 @@ class BottomNavBar extends StatelessWidget {
   }
 
   Widget _buildFab() {
+    final isActive = widget.isVoiceActive;
     return GestureDetector(
-      onTap: onMicPressed,
-      child: Container(
-        width: _fabSize,
-        height: _fabSize,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: _activeColor.withValues(alpha: 0.33),
-              blurRadius: 16,
-              spreadRadius: 2,
+      onTap: widget.onMicPressed,
+      child: AnimatedBuilder(
+        animation: _pulseController,
+        builder: (context, child) {
+          return Container(
+            width: _fabSize,
+            height: _fabSize,
+            decoration: BoxDecoration(
+              color: isActive ? _activeColor : Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: _activeColor.withValues(
+                    alpha: isActive ? _pulseAnimation.value : 0.33,
+                  ),
+                  blurRadius: isActive ? 24 : 16,
+                  spreadRadius: isActive ? 6 : 2,
+                ),
+              ],
             ),
-          ],
-        ),
-        child: const Icon(
-          Icons.mic,
-          size: _fabIconSize,
-          color: Color(0xFF0A0F1C),
-        ),
+            child: Icon(
+              isActive ? Icons.mic : Icons.mic_none,
+              size: _fabIconSize,
+              color: isActive ? Colors.white : const Color(0xFF0A0F1C),
+            ),
+          );
+        },
       ),
     );
   }
