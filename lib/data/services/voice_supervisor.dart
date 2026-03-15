@@ -242,7 +242,9 @@ class VoiceSupervisor {
 
     try {
       // 1. Activate iOS audio session for background playback/recording.
+      developer.log('Step 1: activating audio session...', name: _tag);
       await _audioSession.activate();
+      developer.log('Step 1: audio session activated', name: _tag);
 
       // 1a. Listen for audio session interruptions (phone calls, other apps).
       _audioStateSub?.cancel();
@@ -251,7 +253,9 @@ class VoiceSupervisor {
       );
 
       // 2. Build initial system prompt with current server/session state.
+      developer.log('Step 2: building system prompt...', name: _tag);
       final prompt = await _buildSystemPrompt();
+      developer.log('Step 2: prompt built (${prompt.length} chars)', name: _tag);
 
       if (_useLocal) {
         // -- Local pipeline: STT -> LM -> TTS --
@@ -267,14 +271,20 @@ class VoiceSupervisor {
       } else {
         // -- Realtime pipeline: WebSocket audio-in/audio-out --
         // Request mic permission and start recording.
+        developer.log('Step 3: requesting mic permission...', name: _tag);
         final granted = await _mic.requestPermission();
+        developer.log('Step 3: mic permission=$granted', name: _tag);
         if (!granted) {
           throw StateError('Microphone permission denied');
         }
+        developer.log('Step 4: starting mic recording...', name: _tag);
         final micStream = await _mic.startRecording();
+        developer.log('Step 4: mic recording started', name: _tag);
 
         // Connect to the Realtime WebSocket API with tools.
+        developer.log('Step 5: connecting to ${_voiceService.runtimeType}...', name: _tag);
         await _voiceService.connect(apiKey, tools: toolDefinitions);
+        developer.log('Step 5: connected', name: _tag);
         await _voiceService.updateSystemPrompt(prompt);
 
         // Subscribe to voice events.
