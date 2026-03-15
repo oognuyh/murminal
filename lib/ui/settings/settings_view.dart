@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:murminal/core/providers.dart';
+import 'package:murminal/core/router.dart';
 
 /// Settings screen with configurable polling interval for output monitoring.
 class SettingsView extends ConsumerWidget {
@@ -26,7 +28,53 @@ class SettingsView extends ConsumerWidget {
           ),
           const SizedBox(height: 32),
           _buildPollingIntervalSection(context, ref, pollingInterval),
+          const SizedBox(height: 32),
+          _buildEngineProfilesLink(context),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEngineProfilesLink(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return GestureDetector(
+      onTap: () => context.push(AppRoutes.engineProfiles),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.white12),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.tune, color: theme.colorScheme.primary, size: 20),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Engine Profiles',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Manage output detection patterns and templates',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: Colors.white38,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white38, size: 20),
+          ],
+        ),
       ),
     );
   }
