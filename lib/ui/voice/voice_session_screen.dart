@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:murminal/data/models/voice_provider.dart';
 
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/models/session.dart';
@@ -95,12 +96,40 @@ class _VoiceSessionScreenState extends ConsumerState<VoiceSessionScreen>
   }
 
   Future<void> _startVoiceSession() async {
-    final apiKey = await ref.read(voiceApiKeyProvider.future);
-    if (apiKey == null || apiKey.isEmpty) return;
-
     final provider = ref.read(voiceProviderSettingProvider);
-    final supervisor = ref.read(voiceSupervisorProvider(widget.serverId));
-    await supervisor.start(apiKey, useLocal: provider.isLocal);
+    final apiKey = await ref.read(voiceApiKeyProvider.future);
+
+    if (apiKey == null || apiKey.isEmpty) {
+      debugPrint('Voice: no API key for ${provider.name} '
+          '(storageKey: ${provider.storageKey})');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Set your ${provider.displayName} API key in Settings'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        context.go('/');
+      }
+      return;
+    }
+
+    debugPrint('Voice: starting with ${provider.name}, key=${apiKey.substring(0, 8)}...');
+    try {
+      final supervisor = ref.read(voiceSupervisorProvider(widget.serverId));
+      await supervisor.start(apiKey, useLocal: provider.isLocal);
+    } catch (e) {
+      debugPrint('Voice: start failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Voice session failed: $e'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        context.go('/');
+      }
+    }
   }
 
   Future<void> _stopVoiceSession() async {
