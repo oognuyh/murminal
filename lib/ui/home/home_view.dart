@@ -13,6 +13,14 @@ const _textSecondary = Color(0xFF94A3B8);
 const _textTertiary = Color(0xFF64748B);
 const _textMuted = Color(0xFF475569);
 
+/// Status-specific colors for card left-border accents.
+const _statusCyan = Color(0xFF22D3EE);
+const _statusGreen = Color(0xFF22C55E);
+const _statusRed = Color(0xFFEF4444);
+
+/// Session count threshold above which compact mode activates.
+const _compactThreshold = 4;
+
 /// Home screen displaying session status cards.
 ///
 /// Shows a header with the app title and bell button, followed by
@@ -113,7 +121,9 @@ class HomeView extends ConsumerWidget {
   /// Session list with section label and sorted cards.
   Widget _buildSessionList(List<Session> sessions) {
     final sorted = _sortSessions(sessions);
-    final activeCount = sessions.where((s) => s.status == SessionStatus.running).length;
+    final activeCount =
+        sessions.where((s) => s.status == SessionStatus.running).length;
+    final compact = sessions.length > _compactThreshold;
 
     return Expanded(
       child: Column(
@@ -129,7 +139,10 @@ class HomeView extends ConsumerWidget {
                     padding: const EdgeInsets.only(bottom: 100),
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (context, index) {
-                      return _SessionCard(session: sorted[index]);
+                      return _SessionCard(
+                        session: sorted[index],
+                        compact: compact,
+                      );
                     },
                   ),
           ),
@@ -201,26 +214,61 @@ class HomeView extends ConsumerWidget {
   }
 }
 
-/// Individual session status card.
+/// Individual session status card with animated state transitions.
 ///
 /// Displays the session engine icon, name, server, status indicator,
 /// current task description, and time since last activity.
+///
+/// Uses [AnimatedContainer] for smooth 200ms transitions when status
+/// changes. In compact mode (>4 sessions) padding is reduced and the
+/// task description row is hidden.
 class _SessionCard extends StatelessWidget {
   final Session session;
+  final bool compact;
 
-  const _SessionCard({required this.session});
+  const _SessionCard({required this.session, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
+    final isDone = session.status == SessionStatus.done;
+    final isIdle = session.status == SessionStatus.idle;
+    final isRunning = session.status == SessionStatus.running;
+    final isError = session.status == SessionStatus.error;
+
+    // Muted surface for done and idle states.
+    final cardColor = (isDone || isIdle)
+        ? _surface.withValues(alpha: 0.6)
+        : _surface;
+
+    // Left border accent color per status.
+    final borderColor = switch (session.status) {
+      SessionStatus.running => _statusCyan,
+      SessionStatus.error => _statusRed,
+      SessionStatus.done => Colors.transparent,
+      SessionStatus.idle => Colors.transparent,
+    };
+
+    // Text color dims for idle sessions.
+    final primaryText = isIdle ? _textMuted : _textPrimary;
+    final secondaryText = isIdle ? _textMuted : _textTertiary;
+
     return GestureDetector(
       onTap: () {
         // Navigate to session detail (to be implemented in a future issue).
       },
-      child: Container(
-        padding: const EdgeInsets.all(16),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+        padding: EdgeInsets.all(compact ? 12 : 16),
         decoration: BoxDecoration(
-          color: _surface,
+          color: cardColor,
           borderRadius: BorderRadius.circular(12),
+          border: Border(
+            left: BorderSide(
+              color: borderColor,
+              width: (isRunning || isError) ? 3.0 : 0.0,
+            ),
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -235,8 +283,8 @@ class _SessionCard extends StatelessWidget {
                     children: [
                       Text(
                         session.engine,
-                        style: const TextStyle(
-                          color: _textPrimary,
+                        style: TextStyle(
+                          color: primaryText,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                           fontFamily: 'JetBrains Mono',
@@ -245,8 +293,8 @@ class _SessionCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         session.name,
-                        style: const TextStyle(
-                          color: _textTertiary,
+                        style: TextStyle(
+                          color: secondaryText,
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
                           fontFamily: 'JetBrains Mono',
@@ -255,10 +303,30 @@ class _SessionCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (isRunning) ...[
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _statusCyan.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                if (isDone)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: Icon(
+                      Icons.check_circle_outline,
+                      color: _statusGreen,
+                      size: 16,
+                    ),
+                  ),
                 Text(
                   _formatTimeSince(session.createdAt),
-                  style: const TextStyle(
-                    color: _textTertiary,
+                  style: TextStyle(
+                    color: secondaryText,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                     fontFamily: 'JetBrains Mono',
@@ -266,44 +334,50 @@ class _SessionCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            // Project info row.
-            Text(
-              'server: ${session.serverId}',
-              style: const TextStyle(
-                color: _textMuted,
-                fontSize: 12,
-                fontFamily: 'Inter',
+            if (!compact) ...[
+              const SizedBox(height: 10),
+              // Server info row.
+              Text(
+                'server: ${session.serverId}',
+                style: TextStyle(
+                  color: isIdle ? _textMuted : _textMuted,
+                  fontSize: 12,
+                  fontFamily: 'Inter',
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            // Task description placeholder from last output.
-            Text(
-              _taskDescription(),
-              style: const TextStyle(
-                color: _textSecondary,
-                fontSize: 13,
-                fontFamily: 'Inter',
+              const SizedBox(height: 4),
+              // Task description from session status.
+              Text(
+                _taskDescription(),
+                style: TextStyle(
+                  color: isIdle ? _textMuted : _textSecondary,
+                  fontSize: 13,
+                  fontFamily: 'Inter',
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  /// Status indicator icon: ◐ running, ✓ done, ○ idle.
+  /// Status indicator icon with color-coded background.
+  ///
+  /// Running: ◐ cyan, Done: checkmark green, Idle: ○ muted, Error: ✗ red.
   Widget _buildStatusIcon() {
     final (String symbol, Color color) = switch (session.status) {
-      SessionStatus.running => ('\u25D0', _accent),
-      SessionStatus.done => ('\u2713', _accent),
-      SessionStatus.idle => ('\u25CB', _textTertiary),
-      SessionStatus.error => ('\u2717', const Color(0xFFEF4444)),
+      SessionStatus.running => ('\u25D0', _statusCyan),
+      SessionStatus.done => ('\u2713', _statusGreen),
+      SessionStatus.idle => ('\u25CB', _textMuted),
+      SessionStatus.error => ('\u2717', _statusRed),
     };
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeInOut,
       width: 28,
       height: 28,
       decoration: BoxDecoration(
