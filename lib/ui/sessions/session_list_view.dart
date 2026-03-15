@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/models/session.dart';
@@ -88,9 +89,11 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
     return '${diff.inDays}d ago';
   }
 
-  /// Navigate to session detail (placeholder).
+  /// Navigate to the session detail terminal view.
   void _onSessionTap(Session session) {
-    // Placeholder navigation for session detail screen.
+    context.push(
+      '/sessions/${session.id}?name=${Uri.encodeComponent(session.name)}',
+    );
   }
 
   /// Show actions bottom sheet on long press.
