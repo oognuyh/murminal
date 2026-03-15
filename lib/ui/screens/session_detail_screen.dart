@@ -75,10 +75,14 @@ class SessionDetailScreen extends ConsumerStatefulWidget {
   /// The display name shown in the AppBar.
   final String sessionName;
 
+  /// The server ID for the SSH connection.
+  final String serverId;
+
   const SessionDetailScreen({
     super.key,
     required this.sessionId,
     required this.sessionName,
+    required this.serverId,
   });
 
   @override
@@ -120,7 +124,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   /// Fetch the latest tmux pane content and write new output to the terminal.
   Future<void> _captureOutput() async {
     try {
-      final tmux = ref.read(tmuxControllerProvider);
+      final tmux = ref.read(tmuxControllerProvider(widget.serverId));
       final output = await tmux.capturePane(
         widget.sessionId,
         lines: _captureLines,
@@ -143,7 +147,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     if (text.isEmpty) return;
 
     try {
-      final tmux = ref.read(tmuxControllerProvider);
+      final tmux = ref.read(tmuxControllerProvider(widget.serverId));
       await tmux.sendKeys(widget.sessionId, text);
       _inputController.clear();
       // Trigger an immediate capture to show the result.
@@ -156,7 +160,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   /// Send a special key to tmux without appending Enter.
   Future<void> _sendSpecialKey(String key) async {
     try {
-      final tmux = ref.read(tmuxControllerProvider);
+      final tmux = ref.read(tmuxControllerProvider(widget.serverId));
       await tmux.sendRawKeys(widget.sessionId, key);
       _captureOutput();
     } catch (_) {

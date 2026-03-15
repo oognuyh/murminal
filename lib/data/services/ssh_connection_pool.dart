@@ -48,6 +48,22 @@ class SshConnectionPool {
     return service != null && service.isConnected;
   }
 
+  /// Return the existing [SshService] for [serverId] if already connected.
+  ///
+  /// Throws [StateError] if no active connection exists for the server.
+  /// Use [getConnection] instead if lazy connection is acceptable.
+  SshService getExistingConnection(String serverId) {
+    _assertNotDisposed();
+    final service = _connections[serverId];
+    if (service != null && service.isConnected) {
+      return service;
+    }
+    throw StateError(
+      'No active connection for server: $serverId. '
+      'Call getConnection() first to establish a connection.',
+    );
+  }
+
   /// Get or create a connection for [serverId].
   ///
   /// If the server has a registered config but is not yet connected,

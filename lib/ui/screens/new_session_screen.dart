@@ -47,9 +47,16 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     setState(() => _isCreating = true);
 
     try {
-      final sessionService = ref.read(sessionServiceProvider);
+      final server = _selectedServer!;
       final engine = _selectedEngine!;
       final workingDir = _workingDirController.text.trim();
+
+      // Ensure SSH connection is established via the pool.
+      final pool = ref.read(sshConnectionPoolProvider);
+      pool.register(server);
+      await pool.getConnection(server.id);
+
+      final sessionService = ref.read(sessionServiceProvider(server.id));
 
       // Build the launch command from the engine profile, prepending
       // a cd into the working directory when one is provided.
@@ -61,9 +68,9 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
       }
 
       await sessionService.createSession(
-        serverId: _selectedServer!.id,
+        serverId: server.id,
         engine: engine.name,
-        name: '${engine.displayName}-${_selectedServer!.label}',
+        name: '${engine.displayName}-${server.label}',
         launchCommand: launchCommand,
       );
 

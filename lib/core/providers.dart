@@ -125,16 +125,15 @@ final poolConnectionStatesProvider =
   return pool.connectionStates;
 });
 
-/// SSH service provider. One instance per server connection.
-final sshServiceProvider = Provider<SshService>((ref) {
-  final service = SshService();
-  ref.onDispose(service.dispose);
-  return service;
-});
-
-/// TmuxController backed by the current SSH connection.
-final tmuxControllerProvider = Provider<TmuxController>((ref) {
-  final ssh = ref.watch(sshServiceProvider);
+/// TmuxController for a specific server, backed by the SSH connection pool.
+///
+/// Requires that the server has an active connection in [SshConnectionPool].
+/// Call [SshConnectionPool.getConnection] before accessing this provider
+/// to ensure the connection is established.
+final tmuxControllerProvider =
+    Provider.family<TmuxController, String>((ref, serverId) {
+  final pool = ref.watch(sshConnectionPoolProvider);
+  final ssh = pool.getExistingConnection(serverId);
   return TmuxController(ssh);
 });
 
@@ -144,9 +143,10 @@ final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
   return SessionRepository(prefs);
 });
 
-/// Session service coordinating tmux and local persistence.
-final sessionServiceProvider = Provider<SessionService>((ref) {
-  final tmux = ref.watch(tmuxControllerProvider);
+/// Session service for a specific server, coordinating tmux and local persistence.
+final sessionServiceProvider =
+    Provider.family<SessionService, String>((ref, serverId) {
+  final tmux = ref.watch(tmuxControllerProvider(serverId));
   final repository = ref.watch(sessionRepositoryProvider);
   return SessionService(tmuxController: tmux, repository: repository);
 });
@@ -157,31 +157,32 @@ final sessionServiceProvider = Provider<SessionService>((ref) {
 /// filtered to the specified server.
 final sessionsByServerProvider =
     FutureProvider.family<List<Session>, String>((ref, serverId) async {
-  final service = ref.watch(sessionServiceProvider);
+  final service = ref.watch(sessionServiceProvider(serverId));
   return service.listSessions(serverId: serverId);
 });
 
 /// Lists all sessions across all servers.
 ///
-/// Returns a [Future] that resolves to every persisted session,
-/// reconciled against live tmux state.
+/// Loads sessions from local persistence. Sessions are stored per-server
+/// but this provider aggregates across all servers using the repository
+/// directly (no SSH connection required for listing local metadata).
 final allSessionsProvider = FutureProvider<List<Session>>((ref) async {
-  final service = ref.watch(sessionServiceProvider);
-  return service.listSessions();
+  final repository = ref.watch(sessionRepositoryProvider);
+  return repository.loadAll();
 });
 
 /// Retrieves a single session by its ID.
 ///
 /// Returns null if no session with the given ID exists.
 final sessionProvider = Provider.family<Session?, String>((ref, sessionId) {
-  final service = ref.watch(sessionServiceProvider);
-  return service.getSession(sessionId);
+  final repository = ref.watch(sessionRepositoryProvider);
+  return repository.findById(sessionId);
 });
 
 /// @deprecated Use [sessionsByServerProvider] instead.
 final sessionListProvider =
     FutureProvider.family<List<Session>, String>((ref, serverId) async {
-  final service = ref.watch(sessionServiceProvider);
+  final service = ref.watch(sessionServiceProvider(serverId));
   return service.listSessions(serverId: serverId);
 });
 
@@ -211,13 +212,14 @@ final realtimeVoiceServiceProvider = Provider<RealtimeVoiceService>((ref) {
   return QwenRealtimeService();
 });
 
-/// Output monitor for detecting tmux pane changes.
+/// Output monitor for detecting tmux pane changes, per server.
 ///
 /// Reads the polling interval from [pollingIntervalProvider] and applies it
 /// as the base interval. Uses [ref.listen] so interval changes take effect
 /// immediately without recreating the monitor.
-final outputMonitorProvider = Provider<OutputMonitor>((ref) {
-  final tmux = ref.watch(tmuxControllerProvider);
+final outputMonitorProvider =
+    Provider.family<OutputMonitor, String>((ref, serverId) {
+  final tmux = ref.watch(tmuxControllerProvider(serverId));
   final monitor = OutputMonitor(tmux);
 
   // Apply current polling interval and listen for changes.
@@ -237,8 +239,8 @@ final outputMonitorProvider = Provider<OutputMonitor>((ref) {
 /// Creates the full voice-to-terminal pipeline for the given server.
 final voiceSupervisorProvider =
     Provider.family<VoiceSupervisor, String>((ref, serverId) {
-  final tmux = ref.watch(tmuxControllerProvider);
-  final sessionSvc = ref.watch(sessionServiceProvider);
+  final tmux = ref.watch(tmuxControllerProvider(serverId));
+  final sessionSvc = ref.watch(sessionServiceProvider(serverId));
   final toolExecutor = ToolExecutor(
     tmux: tmux,
     sessionService: sessionSvc,
@@ -249,7 +251,7 @@ final voiceSupervisorProvider =
     audioSession: ref.watch(audioSessionServiceProvider),
     mic: ref.watch(micServiceProvider),
     sessionService: sessionSvc,
-    outputMonitor: ref.watch(outputMonitorProvider),
+    outputMonitor: ref.watch(outputMonitorProvider(serverId)),
     toolExecutor: toolExecutor,
     serverId: serverId,
   );

@@ -92,7 +92,9 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
   /// Navigate to the session detail terminal view.
   void _onSessionTap(Session session) {
     context.push(
-      '/sessions/${session.id}?name=${Uri.encodeComponent(session.name)}',
+      '/sessions/${session.id}'
+      '?name=${Uri.encodeComponent(session.name)}'
+      '&serverId=${Uri.encodeComponent(session.serverId)}',
     );
   }
 
@@ -134,7 +136,8 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
                   color: const Color(0xFFF87171),
                   onTap: () async {
                     Navigator.pop(context);
-                    final service = ref.read(sessionServiceProvider);
+                    final service =
+                        ref.read(sessionServiceProvider(session.serverId));
                     await service.terminateSession(session.id);
                     ref.invalidate(allSessionsProvider);
                   },
@@ -145,7 +148,8 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
                 color: const Color(0xFFF87171),
                 onTap: () async {
                   Navigator.pop(context);
-                  final service = ref.read(sessionServiceProvider);
+                  final service =
+                      ref.read(sessionServiceProvider(session.serverId));
                   await service.deleteSession(session.id);
                   ref.invalidate(allSessionsProvider);
                 },
