@@ -4,7 +4,6 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:murminal/data/models/detected_state.dart';
 import 'package:murminal/data/models/engine_profile.dart';
-import 'package:murminal/data/models/output_change_event.dart';
 import 'package:murminal/data/models/pattern_match_event.dart';
 import 'package:murminal/data/services/output_monitor.dart';
 import 'package:murminal/data/services/pattern_match_service.dart';
