@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:murminal/core/providers.dart';
+import 'package:murminal/core/router.dart';
 import 'package:murminal/data/models/session.dart';
 
 /// Theme colors matching the app's dark slate design.
@@ -179,9 +180,12 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
     );
   }
 
-  /// Navigate to new session creation (placeholder).
-  void _onAddSession() {
-    // Placeholder navigation for new session creation screen.
+  /// Navigate to new session creation screen and refresh on return.
+  Future<void> _onAddSession() async {
+    final result = await context.push<bool>(AppRoutes.newSession);
+    if (result == true) {
+      ref.invalidate(allSessionsProvider);
+    }
   }
 
   @override
