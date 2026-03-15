@@ -22,8 +22,12 @@ import 'package:murminal/data/services/ssh_service.dart';
 import 'package:murminal/data/services/tmux_controller.dart';
 import 'package:murminal/data/services/tool_executor.dart';
 import 'package:murminal/data/services/voice/gemini_realtime_service.dart';
+import 'package:murminal/data/services/voice/lm_service.dart';
+import 'package:murminal/data/services/voice/local_voice_service.dart';
 import 'package:murminal/data/services/voice/qwen_realtime_service.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
+import 'package:murminal/data/services/voice/stt_service.dart';
+import 'package:murminal/data/services/voice/tts_service.dart';
 import 'package:murminal/data/services/engine_registry.dart';
 import 'package:murminal/data/services/feedback_sound_service.dart';
 import 'package:murminal/data/services/error_recovery_service.dart';
@@ -279,13 +283,61 @@ final micServiceProvider = Provider<MicService>((ref) {
 /// Realtime voice service backed by the selected provider.
 ///
 /// Switches implementation based on [voiceProviderSettingProvider].
+/// Only used for Realtime (premium) providers.
 final realtimeVoiceServiceProvider = Provider<RealtimeVoiceService>((ref) {
   final provider = ref.watch(voiceProviderSettingProvider);
   return switch (provider) {
     VoiceProvider.qwen => QwenRealtimeService(),
     VoiceProvider.gemini => GeminiRealtimeService(),
     VoiceProvider.openai => QwenRealtimeService(), // OpenAI-compatible
+    // Local providers don't use the Realtime service; fall back to Qwen
+    // if a caller accidentally accesses this with a local provider.
+    VoiceProvider.localClaude ||
+    VoiceProvider.localOpenai ||
+    VoiceProvider.localGemini =>
+      QwenRealtimeService(),
   };
+});
+
+/// On-device speech-to-text service wrapping iOS SFSpeechRecognizer.
+final sttServiceProvider = Provider<SttService>((ref) {
+  final service = SttService();
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+/// On-device text-to-speech service wrapping iOS AVSpeechSynthesizer.
+final ttsServiceProvider = Provider<TtsService>((ref) {
+  final service = TtsService();
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+/// Text-based LM service backed by the selected local provider.
+///
+/// Returns the appropriate LM implementation for the currently
+/// selected local voice provider. Unused for Realtime providers.
+final lmServiceProvider = Provider<LmService>((ref) {
+  final provider = ref.watch(voiceProviderSettingProvider);
+  return switch (provider) {
+    VoiceProvider.localClaude => ClaudeLmService(),
+    VoiceProvider.localOpenai => OpenAiLmService(),
+    VoiceProvider.localGemini => GeminiLmService(),
+    // Realtime providers default to Claude for LM service.
+    _ => ClaudeLmService(),
+  };
+});
+
+/// Local voice service composing STT -> LM -> TTS pipeline.
+///
+/// Only used when the selected provider is a local provider.
+final localVoiceServiceProvider = Provider<LocalVoiceService>((ref) {
+  final stt = ref.watch(sttServiceProvider);
+  final tts = ref.watch(ttsServiceProvider);
+  final lm = ref.watch(lmServiceProvider);
+  final service = LocalVoiceService(stt: stt, tts: tts, lm: lm);
+  ref.onDispose(service.dispose);
+  return service;
 });
 
 /// Output monitor for detecting tmux pane changes.
@@ -350,6 +402,7 @@ final voiceSupervisorProvider =
   );
   final supervisor = VoiceSupervisor(
     voiceService: ref.watch(realtimeVoiceServiceProvider),
+    localVoiceService: ref.watch(localVoiceServiceProvider),
     audioSession: ref.watch(audioSessionServiceProvider),
     mic: ref.watch(micServiceProvider),
     sessionService: sessionSvc,

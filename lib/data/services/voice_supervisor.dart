@@ -19,6 +19,7 @@ import 'package:murminal/data/services/session_service.dart';
 import 'package:murminal/data/services/ssh_connection_pool.dart';
 import 'package:murminal/data/services/ssh_service.dart';
 import 'package:murminal/data/services/tool_executor.dart';
+import 'package:murminal/data/services/voice/local_voice_service.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
 
 /// Core voice-to-terminal-to-voice pipeline supervisor.
@@ -38,6 +39,7 @@ class VoiceSupervisor {
   static const _tag = 'VoiceSupervisor';
 
   final RealtimeVoiceService _voiceService;
+  final LocalVoiceService? _localVoiceService;
   final AudioSessionService _audioSession;
   final MicService _mic;
   final SessionService _sessionService;
@@ -47,6 +49,9 @@ class VoiceSupervisor {
   final ToolExecutor _toolExecutor;
   final SshConnectionPool? _sshPool;
   final ErrorRecoveryService? _errorRecovery;
+
+  /// Whether this supervisor is using the local STT/TTS pipeline.
+  bool _useLocal = false;
 
   /// The server ID this supervisor is operating against.
   final String serverId;
@@ -79,11 +84,13 @@ class VoiceSupervisor {
     required OutputMonitor outputMonitor,
     required ToolExecutor toolExecutor,
     required this.serverId,
+    LocalVoiceService? localVoiceService,
     SshConnectionPool? sshPool,
     PatternDetector? patternDetector,
     ReportGenerator? reportGenerator,
     ErrorRecoveryService? errorRecovery,
   })  : _voiceService = voiceService,
+        _localVoiceService = localVoiceService,
         _audioSession = audioSession,
         _mic = mic,
         _sessionService = sessionService,
@@ -211,9 +218,12 @@ class VoiceSupervisor {
   /// Start the voice supervisor pipeline.
   ///
   /// Activates the audio session, connects the microphone, builds the
-  /// system prompt, and establishes the Realtime WebSocket connection.
+  /// system prompt, and establishes the voice connection.
+  ///
   /// The [apiKey] is the user's BYOK key for the selected voice provider.
-  Future<void> start(String apiKey) async {
+  /// When [useLocal] is true, the local STT/TTS pipeline is used instead
+  /// of the Realtime WebSocket API.
+  Future<void> start(String apiKey, {bool useLocal = false}) async {
     if (_currentState != VoiceSupervisorState.idle &&
         _currentState != VoiceSupervisorState.error) {
       developer.log('Already running, ignoring start()', name: _tag);
@@ -222,6 +232,7 @@ class VoiceSupervisor {
 
     _setState(VoiceSupervisorState.connecting);
     _apiKey = apiKey;
+    _useLocal = useLocal && _localVoiceService != null;
 
     try {
       // 1. Activate iOS audio session for background playback/recording.
@@ -233,25 +244,39 @@ class VoiceSupervisor {
         _handleAudioSessionState,
       );
 
-      // 2. Request mic permission and start recording.
-      final granted = await _mic.requestPermission();
-      if (!granted) {
-        throw StateError('Microphone permission denied');
-      }
-      final micStream = await _mic.startRecording();
-
-      // 3. Build initial system prompt with current server/session state.
+      // 2. Build initial system prompt with current server/session state.
       final prompt = await _buildSystemPrompt();
 
-      // 4. Connect to the Realtime WebSocket API with tools.
-      await _voiceService.connect(apiKey, tools: toolDefinitions);
-      await _voiceService.updateSystemPrompt(prompt);
+      if (_useLocal) {
+        // -- Local pipeline: STT -> LM -> TTS --
+        final local = _localVoiceService!; // guaranteed non-null by _useLocal
+        await local.connect(apiKey, tools: toolDefinitions);
+        await local.updateSystemPrompt(prompt);
 
-      // 5. Subscribe to voice events.
-      _voiceEventSub = _voiceService.events.listen(_handleVoiceEvent);
+        // Subscribe to voice events from the local pipeline.
+        _voiceEventSub = local.events.listen(_handleVoiceEvent);
 
-      // 6. Pipe mic audio to the Realtime API.
-      _micSub = micStream.listen(_voiceService.sendAudio);
+        // Start STT listening (mic is handled by the native STT plugin).
+        await local.startListening();
+      } else {
+        // -- Realtime pipeline: WebSocket audio-in/audio-out --
+        // Request mic permission and start recording.
+        final granted = await _mic.requestPermission();
+        if (!granted) {
+          throw StateError('Microphone permission denied');
+        }
+        final micStream = await _mic.startRecording();
+
+        // Connect to the Realtime WebSocket API with tools.
+        await _voiceService.connect(apiKey, tools: toolDefinitions);
+        await _voiceService.updateSystemPrompt(prompt);
+
+        // Subscribe to voice events.
+        _voiceEventSub = _voiceService.events.listen(_handleVoiceEvent);
+
+        // Pipe mic audio to the Realtime API.
+        _micSub = micStream.listen(_voiceService.sendAudio);
+      }
 
       // 7. Subscribe to output monitor for proactive reporting.
       _outputSub = _outputMonitor.changes.listen(_onOutputChange);
@@ -272,7 +297,10 @@ class VoiceSupervisor {
       }
 
       _setState(VoiceSupervisorState.listening);
-      developer.log('Pipeline started', name: _tag);
+      developer.log(
+        'Pipeline started (${_useLocal ? "local" : "realtime"})',
+        name: _tag,
+      );
     } catch (e) {
       developer.log('Failed to start: $e', name: _tag);
       _setState(VoiceSupervisorState.error);
@@ -297,6 +325,7 @@ class VoiceSupervisor {
     _reconnectSub?.cancel();
     _errorRecoverySub?.cancel();
     _errorRecovery?.dispose();
+    _localVoiceService?.dispose();
     _stateController.close();
   }
 
@@ -373,12 +402,23 @@ class VoiceSupervisor {
     }
 
     // Return the tool result to the model.
-    _voiceService.sendToolResult(request.callId, toolResult.output);
+    if (_useLocal && _localVoiceService != null) {
+      await _localVoiceService.sendToolResult(
+        request.callId,
+        toolResult.output,
+      );
+    } else {
+      _voiceService.sendToolResult(request.callId, toolResult.output);
+    }
 
     // Refresh the system prompt with updated state after the tool execution.
     try {
       final prompt = await _buildSystemPrompt();
-      await _voiceService.updateSystemPrompt(prompt);
+      if (_useLocal && _localVoiceService != null) {
+        await _localVoiceService.updateSystemPrompt(prompt);
+      } else {
+        await _voiceService.updateSystemPrompt(prompt);
+      }
     } catch (e) {
       developer.log('Failed to refresh system prompt: $e', name: _tag);
     }
@@ -423,10 +463,15 @@ class VoiceSupervisor {
     _errorRecovery?.reportAudioInterruption();
     developer.log('Audio interrupted, pausing pipeline', name: _tag);
 
-    // Pause the microphone to free the audio route.
-    _micSub?.cancel();
-    _micSub = null;
-    await _mic.stopRecording();
+    if (_useLocal && _localVoiceService != null) {
+      // Stop STT listening for local pipeline.
+      await _localVoiceService.stopListening();
+    } else {
+      // Pause the microphone to free the audio route.
+      _micSub?.cancel();
+      _micSub = null;
+      await _mic.stopRecording();
+    }
 
     // Pause output monitor to avoid accumulating stale reports.
     _outputSub?.cancel();
@@ -449,15 +494,22 @@ class VoiceSupervisor {
     developer.log('Audio resumed, restoring pipeline', name: _tag);
 
     try {
-      // 1. Restart the microphone.
-      final micStream = await _mic.startRecording();
-      _micSub = micStream.listen(_voiceService.sendAudio);
+      if (_useLocal && _localVoiceService != null) {
+        // 1. Restart STT listening for local pipeline.
+        await _localVoiceService.startListening();
+      } else {
+        // 1. Restart the microphone for realtime pipeline.
+        final micStream = await _mic.startRecording();
+        _micSub = micStream.listen(_voiceService.sendAudio);
+      }
 
       // 2. Re-subscribe to output monitor.
       _outputSub = _outputMonitor.changes.listen(_onOutputChange);
 
       // 3. Reconnect WebSocket if it was dropped during interruption.
-      await _reconnectWebSocketIfNeeded();
+      if (!_useLocal) {
+        await _reconnectWebSocketIfNeeded();
+      }
 
       // 4. Restore the pre-interruption state (default to listening).
       final restoredState =
@@ -512,12 +564,7 @@ class VoiceSupervisor {
   /// so the user hears a spoken confirmation when audio returns.
   void _sendRecoveryNotification() {
     const message = '[REPORT] Voice session resumed after interruption.';
-    final reportBytes = Uint8List.fromList(utf8.encode(message));
-    try {
-      _voiceService.injectAudioReport(reportBytes);
-    } catch (e) {
-      developer.log('Failed to send recovery notification: $e', name: _tag);
-    }
+    _injectReport(message);
   }
 
   // ---------------------------------------------------------------------------
@@ -539,44 +586,20 @@ class VoiceSupervisor {
       _announcedConnectionLoss = false;
       const message = '[REPORT] SSH connection restored. '
           'Reattaching to existing sessions.';
-      final reportBytes = Uint8List.fromList(utf8.encode(message));
-      try {
-        _voiceService.injectAudioReport(reportBytes);
-      } catch (e) {
-        developer.log(
-          'Failed to send reconnection success notification: $e',
-          name: _tag,
-        );
-      }
+      _injectReport(message);
     } else if (!_announcedConnectionLoss) {
       // First failure — announce connection loss and reconnection.
       _announcedConnectionLoss = true;
       final message = '[REPORT] Connection lost, reconnecting. '
           'Attempting up to ${event.maxAttempts} retries.';
-      final reportBytes = Uint8List.fromList(utf8.encode(message));
-      try {
-        _voiceService.injectAudioReport(reportBytes);
-      } catch (e) {
-        developer.log(
-          'Failed to send reconnection notification: $e',
-          name: _tag,
-        );
-      }
+      _injectReport(message);
     } else if (!event.succeeded &&
         event.attempt >= event.maxAttempts) {
       // All attempts exhausted — notify user.
       _announcedConnectionLoss = false;
       const message = '[REPORT] All reconnection attempts failed. '
           'Please check your network connection.';
-      final reportBytes = Uint8List.fromList(utf8.encode(message));
-      try {
-        _voiceService.injectAudioReport(reportBytes);
-      } catch (e) {
-        developer.log(
-          'Failed to send reconnection failure notification: $e',
-          name: _tag,
-        );
-      }
+      _injectReport(message);
     }
   }
 
@@ -607,15 +630,7 @@ class VoiceSupervisor {
     if (event.phase == RecoveryPhase.recovering) return;
 
     final report = '[REPORT] ${event.message}';
-    final reportBytes = Uint8List.fromList(utf8.encode(report));
-    try {
-      _voiceService.injectAudioReport(reportBytes);
-    } catch (e) {
-      developer.log(
-        'Failed to send error recovery notification: $e',
-        name: _tag,
-      );
-    }
+    _injectReport(report);
   }
 
   // ---------------------------------------------------------------------------
@@ -640,11 +655,14 @@ class VoiceSupervisor {
     final report = _buildOutputReport(event);
     if (report == null) return;
 
-    // Encode the report as UTF-8 text data for the Realtime API.
-    // The model's system prompt instructs it to relay [REPORT]-prefixed
-    // content as spoken status updates.
-    final reportBytes = Uint8List.fromList(utf8.encode(report));
-    _voiceService.injectAudioReport(reportBytes);
+    if (_useLocal && _localVoiceService != null) {
+      // Local pipeline: inject text report directly to the LM.
+      _localVoiceService.injectTextReport(report);
+    } else {
+      // Realtime pipeline: encode as UTF-8 and inject into audio buffer.
+      final reportBytes = Uint8List.fromList(utf8.encode(report));
+      _voiceService.injectAudioReport(reportBytes);
+    }
 
     developer.log(
       'Injected output report for session ${event.sessionName}',
@@ -815,9 +833,31 @@ class VoiceSupervisor {
     _preInterruptionState = null;
     _announcedConnectionLoss = false;
 
-    await _mic.stopRecording();
-    await _voiceService.disconnect();
+    if (_useLocal && _localVoiceService != null) {
+      await _localVoiceService.disconnect();
+    } else {
+      await _mic.stopRecording();
+      await _voiceService.disconnect();
+    }
+    _useLocal = false;
     await _audioSession.deactivate();
+  }
+
+  /// Injects a report message through the active voice pipeline.
+  ///
+  /// For local mode, sends as text to the LM. For realtime mode,
+  /// encodes as UTF-8 and injects into the audio buffer.
+  void _injectReport(String message) {
+    try {
+      if (_useLocal && _localVoiceService != null) {
+        _localVoiceService.injectTextReport(message);
+      } else {
+        final reportBytes = Uint8List.fromList(utf8.encode(message));
+        _voiceService.injectAudioReport(reportBytes);
+      }
+    } catch (e) {
+      developer.log('Failed to inject report: $e', name: _tag);
+    }
   }
 
   void _setState(VoiceSupervisorState newState) {

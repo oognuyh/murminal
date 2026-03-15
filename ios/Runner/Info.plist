@@ -49,5 +49,9 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Murminal needs microphone access for voice commands to control your terminal sessions.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Murminal uses on-device speech recognition to convert your voice commands to text.</string>
 </dict>
 </plist>
