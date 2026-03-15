@@ -165,8 +165,11 @@ class GeminiRealtimeService extends RealtimeVoiceService {
     }
 
     _connected = true;
+    debugPrint('Gemini: WebSocket ready, channel=${_channel != null}, stream=${_channel?.stream != null}');
     _listenToEvents();
+    debugPrint('Gemini: listening to events');
     _sendSetup();
+    debugPrint('Gemini: setup sent, waiting for response...');
   }
 
   /// Sends the initial setup message with model config, system instruction,
@@ -226,7 +229,11 @@ class GeminiRealtimeService extends RealtimeVoiceService {
   }
 
   void _onMessage(dynamic raw) {
-    if (raw is! String) return;
+    debugPrint('Gemini ← type=${raw.runtimeType}, len=${raw is String ? raw.length : "?"}');
+    if (raw is! String) {
+      debugPrint('Gemini ← non-string data: ${raw.runtimeType}');
+      return;
+    }
 
     // Log first 200 chars of every incoming message for debugging.
     final preview = raw.length > 200 ? '${raw.substring(0, 200)}...' : raw;
