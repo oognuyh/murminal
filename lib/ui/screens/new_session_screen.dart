@@ -33,6 +33,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
   ServerConfig? _selectedServer;
   EngineProfile? _selectedEngine;
   bool _isCreating = false;
+  bool _isConnecting = false;
 
   @override
   void dispose() {
@@ -44,11 +45,44 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedServer == null || _selectedEngine == null) return;
 
-    setState(() => _isCreating = true);
+    final server = _selectedServer!;
+    final engine = _selectedEngine!;
+
+    // Step 1: Ensure the server is connected via the pool.
+    setState(() => _isConnecting = true);
 
     try {
-      final sessionService = ref.read(sessionServiceProvider);
-      final engine = _selectedEngine!;
+      final pool = ref.read(sshConnectionPoolProvider);
+
+      // Register config so the pool knows how to connect.
+      pool.register(server);
+
+      // Establish (or reuse) the SSH connection.
+      await pool.getConnection(server.id);
+    } on Exception catch (e) {
+      if (mounted) {
+        setState(() => _isConnecting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to connect to ${server.label}: $e'),
+            backgroundColor: _errorRed,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isConnecting = false;
+        _isCreating = true;
+      });
+    }
+
+    // Step 2: Create the session via the pool-backed service.
+    try {
+      final sessionService =
+          await ref.read(sessionServiceProvider(server.id).future);
       final workingDir = _workingDirController.text.trim();
 
       // Build the launch command from the engine profile, prepending
@@ -61,9 +95,9 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
       }
 
       await sessionService.createSession(
-        serverId: _selectedServer!.id,
+        serverId: server.id,
         engine: engine.name,
-        name: '${engine.displayName}-${_selectedServer!.label}',
+        name: '${engine.displayName}-${server.label}',
         launchCommand: launchCommand,
       );
 
@@ -306,7 +340,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     return SizedBox(
       height: 48,
       child: ElevatedButton(
-        onPressed: _isCreating ? null : _createSession,
+        onPressed: (_isConnecting || _isCreating) ? null : _createSession,
         style: ElevatedButton.styleFrom(
           backgroundColor: _accent,
           foregroundColor: _background,
@@ -316,14 +350,28 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
           ),
           elevation: 0,
         ),
-        child: _isCreating
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: _background,
-                ),
+        child: (_isConnecting || _isCreating)
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _background,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _isConnecting ? 'Connecting...' : 'Creating...',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
               )
             : const Text(
                 'Create Session',

@@ -64,9 +64,12 @@ final router = GoRouter(
         final sessionId = state.pathParameters['sessionId']!;
         final sessionName =
             state.uri.queryParameters['name'] ?? sessionId;
+        final serverId =
+            state.uri.queryParameters['serverId'] ?? '';
         return SessionDetailScreen(
           sessionId: sessionId,
           sessionName: sessionName,
+          serverId: serverId,
         );
       },
     ),
