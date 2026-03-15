@@ -1,0 +1,45 @@
+{
+  "name": "cursor",
+  "display_name": "Cursor CLI",
+  "type": "chat-tui",
+  "input_mode": "natural_language",
+  "launch": {
+    "command": "cursor",
+    "flags": ["--cli"],
+    "env": {}
+  },
+  "patterns": {
+    "prompt": "^>\\s|❯\\s|^cursor>\\s",
+    "thinking": "Thinking\\.\\.\\.|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Generating\\.\\.\\.|Processing\\.\\.\\.",
+    "complete": "✓|✔|Done|Applied|Changes saved|File updated|Completed",
+    "error": "Error:|error:|ERR!|FAIL|Failed|Exception|Cannot|Unable to",
+    "question": "\\(y\\/n\\)|\\(Y\\/n\\)|Confirm\\?|Continue\\?|Proceed\\?|Apply changes\\?"
+  },
+  "states": {
+    "thinking": {
+      "indicator": "spinner",
+      "report": false
+    },
+    "complete": {
+      "indicator": "checkmark",
+      "report": true,
+      "priority": "normal"
+    },
+    "error": {
+      "indicator": "error_text",
+      "report": true,
+      "priority": "high"
+    },
+    "question": {
+      "indicator": "prompt_text",
+      "report": true,
+      "priority": "high"
+    }
+  },
+  "report_templates": {
+    "complete": "Edit applied successfully",
+    "error": "Error encountered: {summary}",
+    "question": "Waiting for confirmation: {summary}",
+    "thinking": "Cursor is working..."
+  }
+}
