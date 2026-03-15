@@ -5,6 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xterm/xterm.dart';
 
 import 'package:murminal/core/providers.dart';
+import 'package:murminal/data/services/ssh_service.dart' as ssh;
+import 'package:murminal/ui/widgets/ssh_reconnection_banner.dart';
 
 /// Theme colors matching the app's dark slate design.
 const _background = Color(0xFF0A0F1C);
@@ -228,6 +230,8 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            // SSH reconnection banner.
+            _buildReconnectionBanner(),
             // Terminal view.
             Expanded(
               child: GestureDetector(
@@ -253,6 +257,37 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  /// Build the SSH reconnection banner that reacts to pool state.
+  Widget _buildReconnectionBanner() {
+    final reconnectAsync = ref.watch(sshReconnectionEventsProvider);
+    final poolStatesAsync = ref.watch(poolConnectionStatesProvider);
+
+    // Determine if any connection is reconnecting.
+    final poolStates = poolStatesAsync.valueOrNull ?? {};
+    final hasReconnecting = poolStates.values
+        .any((s) => s == ssh.ConnectionState.reconnecting);
+    final allDisconnected = poolStates.isNotEmpty &&
+        poolStates.values
+            .every((s) => s == ssh.ConnectionState.disconnected);
+
+    // Determine effective connection state for the banner.
+    ssh.ConnectionState effectiveState;
+    if (hasReconnecting) {
+      effectiveState = ssh.ConnectionState.reconnecting;
+    } else if (allDisconnected) {
+      effectiveState = ssh.ConnectionState.disconnected;
+    } else {
+      effectiveState = ssh.ConnectionState.connected;
+    }
+
+    final event = reconnectAsync.valueOrNull;
+
+    return SshReconnectionBanner(
+      event: event,
+      connectionState: effectiveState,
     );
   }
 

@@ -23,6 +23,10 @@ void main() {
       test('isConnected returns false initially', () {
         expect(service.isConnected, false);
       });
+
+      test('isReconnecting returns false initially', () {
+        expect(service.isReconnecting, false);
+      });
     });
 
     group('execute', () {
@@ -35,7 +39,8 @@ void main() {
     });
 
     group('disconnect', () {
-      test('remains disconnected after disconnect when not connected', () async {
+      test('remains disconnected after disconnect when not connected',
+          () async {
         await service.disconnect();
         expect(service.currentState, ConnectionState.disconnected);
         expect(service.isConnected, false);
@@ -67,6 +72,74 @@ void main() {
         // Should have transitioned: connecting -> disconnected
         expect(states, contains(ConnectionState.connecting));
         expect(service.currentState, ConnectionState.disconnected);
+      });
+    });
+
+    group('reconnection configuration', () {
+      test('has default max reconnect attempts', () {
+        expect(
+          service.maxReconnectAttempts,
+          SshService.defaultMaxReconnectAttempts,
+        );
+      });
+
+      test('allows custom max reconnect attempts', () {
+        final custom = SshService(maxReconnectAttempts: 5);
+        expect(custom.maxReconnectAttempts, 5);
+        custom.dispose();
+      });
+
+      test('maxBackoffDelay is 30 seconds', () {
+        expect(SshService.maxBackoffDelay, const Duration(seconds: 30));
+      });
+    });
+
+    group('reconnectionEvents stream', () {
+      test('stream is available before any reconnection', () {
+        // Should be able to listen without errors.
+        final sub = service.reconnectionEvents.listen((_) {});
+        sub.cancel();
+      });
+    });
+
+    group('SshReconnectionEvent', () {
+      test('creates with required fields', () {
+        const event = SshReconnectionEvent(
+          attempt: 1,
+          maxAttempts: 10,
+          delay: Duration(seconds: 1),
+          succeeded: false,
+        );
+
+        expect(event.attempt, 1);
+        expect(event.maxAttempts, 10);
+        expect(event.delay, const Duration(seconds: 1));
+        expect(event.succeeded, false);
+        expect(event.error, isNull);
+      });
+
+      test('creates with error message', () {
+        const event = SshReconnectionEvent(
+          attempt: 3,
+          maxAttempts: 10,
+          delay: Duration(seconds: 4),
+          succeeded: false,
+          error: 'Connection refused',
+        );
+
+        expect(event.error, 'Connection refused');
+      });
+
+      test('creates success event', () {
+        const event = SshReconnectionEvent(
+          attempt: 2,
+          maxAttempts: 10,
+          delay: Duration.zero,
+          succeeded: true,
+        );
+
+        expect(event.succeeded, true);
+        expect(event.delay, Duration.zero);
       });
     });
 
@@ -135,12 +208,15 @@ void main() {
 
     group('ConnectionState enum', () {
       test('has all expected values', () {
-        expect(ConnectionState.values, containsAll([
-          ConnectionState.disconnected,
-          ConnectionState.connecting,
-          ConnectionState.connected,
-          ConnectionState.reconnecting,
-        ]));
+        expect(
+          ConnectionState.values,
+          containsAll([
+            ConnectionState.disconnected,
+            ConnectionState.connecting,
+            ConnectionState.connected,
+            ConnectionState.reconnecting,
+          ]),
+        );
       });
     });
   });
