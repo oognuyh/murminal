@@ -239,9 +239,12 @@ class GeminiRealtimeService extends RealtimeVoiceService {
       return;
     }
 
-    // Log first 200 chars of every incoming message for debugging.
-    final preview = jsonStr.length > 200 ? '${jsonStr.substring(0, 200)}...' : jsonStr;
-    debugPrint('Gemini ← $preview');
+    // Skip logging audio-heavy messages to reduce noise.
+    // Only log non-audio messages or a brief summary.
+    if (!jsonStr.contains('"data"')) {
+      final preview = jsonStr.length > 300 ? '${jsonStr.substring(0, 300)}...' : jsonStr;
+      debugPrint('Gemini ← $preview');
+    }
 
     final event = GeminiRealtimeEvent.fromJson(jsonStr);
     _dispatchEvent(event);
@@ -254,16 +257,18 @@ class GeminiRealtimeService extends RealtimeVoiceService {
         _eventController.add(const SessionCreated('gemini-live'));
 
       case GeminiTextChunk():
+        debugPrint('Gemini says: ${event.text}');
         _eventController.add(TextDelta(event.text));
 
       case GeminiAudioChunk():
         _eventController.add(AudioDelta(event.audio));
 
       case GeminiTurnComplete():
+        debugPrint('Gemini: turn complete');
         _eventController.add(const AudioDone());
 
       case GeminiInterrupted():
-        developer.log('Model output interrupted by user speech', name: _tag);
+        debugPrint('Gemini: interrupted by user');
         _eventController.add(const AudioDone());
 
       case GeminiToolCall():

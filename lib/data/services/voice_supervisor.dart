@@ -69,6 +69,10 @@ class VoiceSupervisor {
   VoiceSupervisorState _currentState = VoiceSupervisorState.idle;
   StreamSubscription<VoiceEvent>? _voiceEventSub;
   StreamSubscription<Uint8List>? _micSub;
+
+  /// Timer for delayed mic resume after model finishes speaking.
+  /// Prevents premature resume when Gemini sends multi-part responses.
+  Timer? _micResumeTimer;
   StreamSubscription<OutputChangeEvent>? _outputSub;
   StreamSubscription<AudioSessionState>? _audioStateSub;
   StreamSubscription<SshReconnectionEvent>? _reconnectSub;
@@ -382,21 +386,25 @@ class VoiceSupervisor {
         _handleToolCall(event);
 
       case AudioDelta():
+        // Cancel any pending mic resume — model is still speaking.
+        _micResumeTimer?.cancel();
+        _micResumeTimer = null;
         // Update state to indicate the model is speaking.
         if (_currentState != VoiceSupervisorState.speaking) {
-          debugPrint('Voice: model speaking');
           _setState(VoiceSupervisorState.speaking);
-          // Pause mic to prevent echo feedback (speaker → mic → interrupt loop).
-          _micSub?.pause();
         }
         // Play PCM audio through native AVAudioEngine.
         _pcmPlayer.play(event.audio);
 
       case AudioDone():
-        debugPrint('Voice: model done speaking');
-        _setState(VoiceSupervisorState.listening);
-        // Resume mic after model finishes speaking.
-        _micSub?.resume();
+        // Delay mic resume to handle multi-part responses where
+        // Gemini sends text + audio in quick succession.
+        _micResumeTimer?.cancel();
+        _micResumeTimer = Timer(const Duration(milliseconds: 800), () {
+          if (_currentState == VoiceSupervisorState.speaking) {
+            _setState(VoiceSupervisorState.listening);
+          }
+        });
 
       case VoiceError():
         debugPrint('Voice error: ${event.message}');
@@ -888,6 +896,9 @@ class VoiceSupervisor {
 
   /// Tears down all active connections and subscriptions.
   Future<void> _teardown() async {
+    _micResumeTimer?.cancel();
+    _micResumeTimer = null;
+
     _voiceEventSub?.cancel();
     _voiceEventSub = null;
 
