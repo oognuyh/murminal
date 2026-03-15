@@ -370,28 +370,31 @@ class VoiceSupervisor {
         _handleToolCall(event);
 
       case AudioDelta():
-        // Audio playback is handled downstream by the audio player;
-        // update state to indicate the model is speaking.
+        // Update state to indicate the model is speaking.
         if (_currentState != VoiceSupervisorState.speaking) {
+          debugPrint('Voice: model speaking (audio ${event.audio.length} bytes)');
           _setState(VoiceSupervisorState.speaking);
         }
+        // TODO: pipe audio to AVAudioPlayer for playback
 
       case AudioDone():
-        // Model finished speaking; return to listening.
+        debugPrint('Voice: model done speaking');
         _setState(VoiceSupervisorState.listening);
 
       case VoiceError():
-        developer.log('Voice error: ${event.message}', name: _tag);
+        debugPrint('Voice error: ${event.message}');
         _setState(VoiceSupervisorState.error);
 
       case SessionCreated():
-        developer.log('Session created: ${event.sessionId}', name: _tag);
+        debugPrint('Voice: session created: ${event.sessionId}');
+        _setState(VoiceSupervisorState.listening);
 
       case TextDelta():
-        // Text deltas are informational; no state change needed.
+        debugPrint('Voice text: ${event.text}');
         break;
 
       case TextDone():
+        debugPrint('Voice text done: ${event.text}');
         break;
     }
   }
