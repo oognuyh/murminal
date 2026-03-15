@@ -249,9 +249,13 @@ class VoiceSupervisor {
     try {
       // 1. Activate iOS audio session for background playback/recording.
       debugPrint('Step 1: activating audio session...');
-      await _audioSession.activate();
-      await _pcmPlayer.start();
-      debugPrint('Step 1: audio session activated');
+      try {
+        await _audioSession.activate();
+        debugPrint('Step 1: audio session activated');
+      } catch (e) {
+        debugPrint('Step 1: audio session failed (non-fatal): $e');
+        // Continue without audio session — mic may still work.
+      }
 
       // 1a. Listen for audio session interruptions (phone calls, other apps).
       _audioStateSub?.cancel();
