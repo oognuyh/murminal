@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/core/router.dart';
 import 'package:murminal/data/models/server_config.dart';
+import 'package:murminal/data/models/session.dart';
 
 /// Theme colors matching the app's dark slate design.
 const _background = Color(0xFF0A0F1C);
@@ -13,12 +14,15 @@ const _accent = Color(0xFF22D3EE);
 const _textPrimary = Color(0xFFFFFFFF);
 const _textMuted = Color(0xFF64748B);
 const _searchIcon = Color(0xFF475569);
+const _connectedDot = Color(0xFF4ADE80);
+const _offlineDot = Color(0xFF475569);
 
 /// Server list management screen.
 ///
 /// Displays all registered servers grouped by connection status (Connected /
 /// Saved) with search filtering, status indicators, and navigation to the
-/// add/edit server screen.
+/// add/edit server screen. Matches the pen wireframe design with green/grey
+/// status dots, session counts, and a cyan circular add button.
 class ServerListView extends ConsumerStatefulWidget {
   const ServerListView({super.key});
 
@@ -73,10 +77,16 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
     }
   }
 
+  /// Count sessions for a given server from the all-sessions provider.
+  int _sessionCount(String serverId, List<Session> allSessions) {
+    return allSessions.where((s) => s.serverId == serverId).length;
+  }
+
   @override
   Widget build(BuildContext context) {
     final allServers = ref.watch(serverListProvider);
     final filtered = _filterServers(allServers);
+    final sessionsAsync = ref.watch(allSessionsProvider);
 
     // Partition into connected (has lastConnectedAt) and saved (never connected).
     final connected = <ServerConfig>[];
@@ -105,21 +115,22 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
               Expanded(
                 child: filtered.isEmpty
                     ? _buildEmptyState(allServers.isEmpty)
-                    : ListView(
-                        children: [
-                          if (connected.isNotEmpty) ...[
-                            _buildSectionLabel('CONNECTED'),
-                            const SizedBox(height: 12),
-                            ...connected.map(_buildServerCard),
-                          ],
-                          if (connected.isNotEmpty && saved.isNotEmpty)
-                            const SizedBox(height: 24),
-                          if (saved.isNotEmpty) ...[
-                            _buildSectionLabel('SAVED'),
-                            const SizedBox(height: 12),
-                            ...saved.map(_buildServerCard),
-                          ],
-                        ],
+                    : sessionsAsync.when(
+                        data: (sessions) => _buildServerList(
+                          connected,
+                          saved,
+                          sessions,
+                        ),
+                        loading: () => _buildServerList(
+                          connected,
+                          saved,
+                          const [],
+                        ),
+                        error: (_, __) => _buildServerList(
+                          connected,
+                          saved,
+                          const [],
+                        ),
                       ),
               ),
             ],
@@ -129,7 +140,31 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
     );
   }
 
-  /// Title row with SERVERS heading and add button.
+  /// Server list grouped by connection status.
+  Widget _buildServerList(
+    List<ServerConfig> connected,
+    List<ServerConfig> saved,
+    List<Session> allSessions,
+  ) {
+    return ListView(
+      children: [
+        if (connected.isNotEmpty) ...[
+          _buildSectionLabel('CONNECTED'),
+          const SizedBox(height: 12),
+          ...connected.map((s) => _buildServerCard(s, true, allSessions)),
+        ],
+        if (connected.isNotEmpty && saved.isNotEmpty)
+          const SizedBox(height: 24),
+        if (saved.isNotEmpty) ...[
+          _buildSectionLabel('SAVED'),
+          const SizedBox(height: 12),
+          ...saved.map((s) => _buildServerCard(s, false, allSessions)),
+        ],
+      ],
+    );
+  }
+
+  /// Title row with SERVERS heading and cyan circular add button.
   Widget _buildHeader() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -149,13 +184,13 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
           child: Container(
             width: 40,
             height: 40,
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(8),
+            decoration: const BoxDecoration(
+              color: _accent,
+              shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.add,
-              color: _accent,
+              color: _background,
               size: 22,
             ),
           ),
@@ -209,11 +244,20 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
     );
   }
 
-  /// Individual server card with status indicator.
-  Widget _buildServerCard(ServerConfig server) {
-    final isConnected = server.lastConnectedAt != null;
-    final statusColor = isConnected ? _accent : _searchIcon;
-    final address = '${server.username}@${server.host}:${server.port}';
+  /// Individual server card with status indicator dot and subtitle info.
+  ///
+  /// Connected servers show a green dot, IP address, and session count.
+  /// Saved/offline servers show a grey dot, hostname, and "offline" label.
+  Widget _buildServerCard(
+    ServerConfig server,
+    bool isConnected,
+    List<Session> allSessions,
+  ) {
+    final statusColor = isConnected ? _connectedDot : _offlineDot;
+    final host = '${server.host}:${server.port}';
+    final subtitle = isConnected
+        ? '$host  ·  ${_sessionCount(server.id, allSessions)} sessions'
+        : '$host  ·  offline';
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -253,7 +297,7 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      address,
+                      subtitle,
                       style: const TextStyle(
                         color: _textMuted,
                         fontSize: 12,
