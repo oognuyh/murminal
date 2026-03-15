@@ -18,12 +18,16 @@ class MainScaffold extends StatelessWidget {
   /// Callback when the center FAB mic button is pressed.
   final VoidCallback onMicPressed;
 
+  /// Whether a voice session is currently active.
+  final bool isVoiceActive;
+
   const MainScaffold({
     super.key,
     required this.tabs,
     required this.currentIndex,
     required this.onTabSelected,
     required this.onMicPressed,
+    this.isVoiceActive = false,
   });
 
   @override
@@ -38,6 +42,7 @@ class MainScaffold extends StatelessWidget {
         currentIndex: currentIndex,
         onTabSelected: onTabSelected,
         onMicPressed: onMicPressed,
+        isVoiceActive: isVoiceActive,
       ),
     );
   }
