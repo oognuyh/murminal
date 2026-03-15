@@ -13,4 +13,12 @@ enum AudioSessionState {
   /// Siri activation, or another app claiming the audio route).
   /// Audio I/O is temporarily unavailable.
   interrupted,
+
+  /// Audio session has resumed after an interruption.
+  ///
+  /// This is a transient state emitted once after a successful
+  /// reactivation following an interruption, before transitioning
+  /// back to [active]. Listeners can use this to trigger recovery
+  /// logic (e.g. reconnecting a WebSocket or notifying the user).
+  resumed,
 }

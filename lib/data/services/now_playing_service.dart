@@ -87,6 +87,7 @@ class NowPlayingService {
       VoiceSupervisorState.listening => 'Listening',
       VoiceSupervisorState.processing => 'Processing command',
       VoiceSupervisorState.speaking => 'Speaking',
+      VoiceSupervisorState.interrupted => 'Interrupted — waiting to resume',
       VoiceSupervisorState.error => 'Error — tap play to retry',
     };
   }

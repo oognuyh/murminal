@@ -23,6 +23,7 @@ const _waveformBarCount = 5;
 /// - [VoiceSupervisorState.processing]: cyan circular progress spinner.
 /// - [VoiceSupervisorState.speaking]: pulsing/scaling mic icon in cyan.
 /// - [VoiceSupervisorState.connecting]: rotating sync icon in cyan.
+/// - [VoiceSupervisorState.interrupted]: blinking pause icon in amber.
 /// - [VoiceSupervisorState.error]: shaking mic-off icon in red.
 class VoiceStatusIndicator extends StatefulWidget {
   /// The current voice supervisor state to visualize.
@@ -95,6 +96,7 @@ class _VoiceStatusIndicatorState extends State<VoiceStatusIndicator>
       VoiceSupervisorState.processing => _buildProcessing(),
       VoiceSupervisorState.speaking => _buildSpeaking(),
       VoiceSupervisorState.connecting => _buildConnecting(),
+      VoiceSupervisorState.interrupted => _buildInterrupted(),
       VoiceSupervisorState.error => _buildError(),
     };
   }
@@ -187,6 +189,28 @@ class _VoiceStatusIndicatorState extends State<VoiceStatusIndicator>
         Icons.sync,
         size: widget.size,
         color: _cyanColor,
+      ),
+    );
+  }
+
+  /// Blinking pause icon in amber to indicate audio interruption.
+  Widget _buildInterrupted() {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        // Slow blink: opacity oscillates between 0.3 and 1.0.
+        final opacity = 0.3 + 0.7 * (0.5 + 0.5 * math.sin(
+          _controller.value * 2 * math.pi,
+        ));
+        return Opacity(
+          opacity: opacity,
+          child: child,
+        );
+      },
+      child: Icon(
+        Icons.pause_circle_outline,
+        size: widget.size,
+        color: const Color(0xFFF59E0B),
       ),
     );
   }

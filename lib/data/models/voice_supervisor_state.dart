@@ -19,6 +19,10 @@ enum VoiceSupervisorState {
   /// The model is generating an audio response being played back.
   speaking,
 
+  /// The audio session was interrupted by the system (phone call,
+  /// other app). Mic and output monitoring are paused.
+  interrupted,
+
   /// An unrecoverable error occurred. Call [VoiceSupervisor.stop]
   /// and inspect the error before restarting.
   error,
