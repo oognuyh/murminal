@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:murminal/core/providers.dart';
+import 'package:murminal/core/router.dart';
 import 'package:murminal/data/models/voice_provider.dart';
 
 /// Background color for the settings screen.
@@ -75,6 +77,8 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
           ),
           const SizedBox(height: 32),
           _buildVoiceProviderSection(context, selectedProvider),
+          const SizedBox(height: 32),
+          _buildEngineProfilesLink(context),
           const SizedBox(height: 32),
           _buildPollingIntervalSection(context, ref, pollingInterval),
         ],
@@ -335,6 +339,59 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
         });
       }
     }
+  }
+
+  // -- Engine profiles section -----------------------------------------------
+
+  Widget _buildEngineProfilesLink(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('ENGINE'),
+        const SizedBox(height: 16),
+        Material(
+          color: _kSurfaceColor,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: () => context.push(AppRoutes.engineProfiles),
+            borderRadius: BorderRadius.circular(10),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(
+                children: [
+                  Icon(Icons.terminal, color: _kAccentColor, size: 20),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Engine Profiles',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'View, edit, and create engine profiles',
+                          style: TextStyle(
+                            color: Colors.white38,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Colors.white24, size: 20),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   // -- Polling section (existing) -------------------------------------------
