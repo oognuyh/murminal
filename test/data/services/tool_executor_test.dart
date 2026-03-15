@@ -7,6 +7,7 @@ import 'package:murminal/data/models/tool_result.dart';
 import 'package:murminal/data/models/voice_event.dart';
 import 'package:murminal/data/repositories/session_repository.dart';
 import 'package:murminal/data/services/session_service.dart';
+import 'package:murminal/data/services/ssh_connection_pool.dart';
 import 'package:murminal/data/services/ssh_service.dart';
 import 'package:murminal/data/services/tmux_controller.dart';
 import 'package:murminal/data/services/tool_executor.dart';
@@ -67,6 +68,19 @@ class InMemorySessionRepository implements SessionRepository {
   }
 }
 
+/// A fake SshConnectionPool that always returns the provided MockSshService.
+class FakeSshConnectionPool extends SshConnectionPool {
+  final MockSshService _mockSsh;
+
+  FakeSshConnectionPool(this._mockSsh) : super(serviceFactory: () => _mockSsh);
+
+  @override
+  Future<SshService> getConnection(String serverId) async => _mockSsh;
+
+  @override
+  bool isConnected(String serverId) => true;
+}
+
 void main() {
   late MockSshService mockSsh;
   late TmuxController tmux;
@@ -80,8 +94,9 @@ void main() {
     mockSsh = MockSshService();
     tmux = TmuxController(mockSsh);
     repository = InMemorySessionRepository();
+    final pool = FakeSshConnectionPool(mockSsh);
     sessionService = SessionService(
-      tmuxController: tmux,
+      pool: pool,
       repository: repository,
     );
     executor = ToolExecutor(

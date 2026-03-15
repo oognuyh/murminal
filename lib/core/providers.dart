@@ -127,6 +127,8 @@ final poolConnectionStatesProvider =
 });
 
 /// SSH service provider. One instance per server connection.
+///
+/// @deprecated Prefer [sshConnectionPoolProvider] for per-server connections.
 final sshServiceProvider = Provider<SshService>((ref) {
   final service = SshService();
   ref.onDispose(service.dispose);
@@ -151,11 +153,14 @@ final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
   return SessionRepository(prefs);
 });
 
-/// Session service coordinating tmux and local persistence.
+/// Session service coordinating SSH pool, tmux, and local persistence.
+///
+/// Uses [SshConnectionPool] to obtain per-server SSH connections
+/// when creating, listing, or terminating sessions.
 final sessionServiceProvider = Provider<SessionService>((ref) {
-  final tmux = ref.watch(tmuxControllerProvider);
+  final pool = ref.watch(sshConnectionPoolProvider);
   final repository = ref.watch(sessionRepositoryProvider);
-  return SessionService(tmuxController: tmux, repository: repository);
+  return SessionService(pool: pool, repository: repository);
 });
 
 /// Lists sessions for a given server ID.
