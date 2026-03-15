@@ -367,6 +367,30 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
                         fontFamily: 'JetBrains Mono',
                       ),
                     ),
+                    if (session.worktreeBranch != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.account_tree_outlined,
+                            size: 12,
+                            color: _accent.withValues(alpha: 0.7),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              session.worktreeBranch!,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _accent.withValues(alpha: 0.7),
+                                fontSize: 11,
+                                fontFamily: 'JetBrains Mono',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),

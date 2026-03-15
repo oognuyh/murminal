@@ -28,6 +28,9 @@ class Session {
   /// Optional working directory path for worktree-based engines.
   final String? worktreePath;
 
+  /// Branch name associated with the worktree, if any.
+  final String? worktreeBranch;
+
   const Session({
     required this.id,
     required this.serverId,
@@ -36,6 +39,7 @@ class Session {
     required this.status,
     required this.createdAt,
     this.worktreePath,
+    this.worktreeBranch,
   });
 
   /// Create a [Session] from a JSON map.
@@ -48,6 +52,7 @@ class Session {
       status: SessionStatus.fromString(json['status'] as String),
       createdAt: DateTime.parse(json['created_at'] as String),
       worktreePath: json['worktree_path'] as String?,
+      worktreeBranch: json['worktree_branch'] as String?,
     );
   }
 
@@ -60,6 +65,7 @@ class Session {
         'status': status.name,
         'created_at': createdAt.toIso8601String(),
         if (worktreePath != null) 'worktree_path': worktreePath,
+        if (worktreeBranch != null) 'worktree_branch': worktreeBranch,
       };
 
   /// Parse a JSON string into a [Session].
@@ -77,6 +83,7 @@ class Session {
     SessionStatus? status,
     DateTime? createdAt,
     String? worktreePath,
+    String? worktreeBranch,
   }) {
     return Session(
       id: id ?? this.id,
@@ -86,6 +93,7 @@ class Session {
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       worktreePath: worktreePath ?? this.worktreePath,
+      worktreeBranch: worktreeBranch ?? this.worktreeBranch,
     );
   }
 
@@ -100,11 +108,20 @@ class Session {
           name == other.name &&
           status == other.status &&
           createdAt == other.createdAt &&
-          worktreePath == other.worktreePath;
+          worktreePath == other.worktreePath &&
+          worktreeBranch == other.worktreeBranch;
 
   @override
-  int get hashCode =>
-      Object.hash(id, serverId, engine, name, status, createdAt, worktreePath);
+  int get hashCode => Object.hash(
+        id,
+        serverId,
+        engine,
+        name,
+        status,
+        createdAt,
+        worktreePath,
+        worktreeBranch,
+      );
 
   @override
   String toString() =>

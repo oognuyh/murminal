@@ -22,6 +22,7 @@ import 'package:murminal/data/services/voice/realtime_voice_service.dart';
 import 'package:murminal/data/services/engine_registry.dart';
 import 'package:murminal/data/services/feedback_sound_service.dart';
 import 'package:murminal/data/services/voice_supervisor.dart';
+import 'package:murminal/data/services/worktree_service.dart';
 import 'package:murminal/data/models/voice_supervisor_state.dart';
 
 /// Singleton [EngineRegistry] for managing engine profiles.
@@ -130,6 +131,12 @@ final sshServiceProvider = Provider<SshService>((ref) {
   final service = SshService();
   ref.onDispose(service.dispose);
   return service;
+});
+
+/// Worktree service for managing git worktrees on remote hosts.
+final worktreeServiceProvider = Provider<WorktreeService>((ref) {
+  final ssh = ref.watch(sshServiceProvider);
+  return WorktreeService(ssh);
 });
 
 /// TmuxController backed by the current SSH connection.

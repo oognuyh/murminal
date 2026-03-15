@@ -25,6 +25,8 @@ class SessionService {
     required String engine,
     required String name,
     String? launchCommand,
+    String? worktreePath,
+    String? worktreeBranch,
   }) async {
     final id = _generateId(name);
     final now = DateTime.now();
@@ -39,6 +41,8 @@ class SessionService {
       name: name,
       status: SessionStatus.running,
       createdAt: now,
+      worktreePath: worktreePath,
+      worktreeBranch: worktreeBranch,
     );
 
     await _repository.save(session);
