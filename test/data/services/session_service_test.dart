@@ -3,8 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:murminal/data/models/session.dart';
 import 'package:murminal/data/repositories/session_repository.dart';
 import 'package:murminal/data/services/session_service.dart';
+import 'package:murminal/data/services/ssh_connection_pool.dart';
 import 'package:murminal/data/services/ssh_service.dart';
-import 'package:murminal/data/services/tmux_controller.dart';
 
 /// Manual mock for SshService.
 class MockSshService extends SshService {
@@ -65,17 +65,30 @@ class InMemorySessionRepository implements SessionRepository {
   }
 }
 
+/// A fake SshConnectionPool that always returns the provided MockSshService.
+class FakeSshConnectionPool extends SshConnectionPool {
+  final MockSshService _mockSsh;
+
+  FakeSshConnectionPool(this._mockSsh) : super(serviceFactory: () => _mockSsh);
+
+  @override
+  Future<SshService> getConnection(String serverId) async => _mockSsh;
+
+  @override
+  bool isConnected(String serverId) => true;
+}
+
 void main() {
   late MockSshService mockSsh;
-  late TmuxController tmux;
+  late FakeSshConnectionPool pool;
   late InMemorySessionRepository repository;
   late SessionService service;
 
   setUp(() {
     mockSsh = MockSshService();
-    tmux = TmuxController(mockSsh);
+    pool = FakeSshConnectionPool(mockSsh);
     repository = InMemorySessionRepository();
-    service = SessionService(tmuxController: tmux, repository: repository);
+    service = SessionService(pool: pool, repository: repository);
   });
 
   group('SessionService', () {
@@ -390,6 +403,35 @@ void main() {
         expect(reloaded.name, 'persist-test');
         expect(reloaded.status, SessionStatus.running);
         expect(reloaded.createdAt, isNotNull);
+      });
+    });
+
+    group('pool integration', () {
+      test('obtains connection from pool for session creation', () async {
+        final session = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'pool-test',
+        );
+
+        expect(session.status, SessionStatus.running);
+        // Tmux commands were issued through the pooled SSH connection.
+        expect(mockSsh.commands, isNotEmpty);
+        expect(mockSsh.commands[0], contains('new-session'));
+      });
+
+      test('obtains connection from pool for session termination', () async {
+        final session = await service.createSession(
+          serverId: 'server-1',
+          engine: 'claude',
+          name: 'pool-terminate',
+        );
+
+        mockSsh.commands.clear();
+        await service.terminateSession(session.id);
+
+        expect(mockSsh.commands, isNotEmpty);
+        expect(mockSsh.commands[0], contains('kill-session'));
       });
     });
   });

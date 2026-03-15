@@ -5,6 +5,7 @@ import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/models/engine_profile.dart';
 import 'package:murminal/data/models/server_config.dart';
 import 'package:murminal/data/models/worktree_info.dart';
+import 'package:murminal/data/services/worktree_service.dart';
 
 /// Theme colors matching the app's dark slate design.
 const _background = Color(0xFF0A0F1C);
@@ -21,6 +22,9 @@ const _errorRed = Color(0xFFEF4444);
 /// Allows the user to select a server and engine profile, optionally
 /// specify a git repository path to browse worktrees, and launch a
 /// tmux session in the selected worktree directory.
+///
+/// Connects to the selected server via [SshConnectionPool] before
+/// creating the session, displaying connection progress and errors.
 class NewSessionScreen extends ConsumerStatefulWidget {
   const NewSessionScreen({super.key});
 
@@ -38,6 +42,10 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
   EngineProfile? _selectedEngine;
   bool _isCreating = false;
 
+  /// SSH connection state for the selected server.
+  bool _isConnecting = false;
+  String? _connectionError;
+
   /// Worktree state.
   List<WorktreeInfo> _worktrees = [];
   WorktreeInfo? _selectedWorktree;
@@ -54,7 +62,62 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     super.dispose();
   }
 
+  /// Connect to the selected server via the connection pool.
+  ///
+  /// Registers the server config and obtains a connection. Updates
+  /// [_isConnecting] and [_connectionError] to reflect progress.
+  Future<bool> _connectToServer() async {
+    final server = _selectedServer;
+    if (server == null) return false;
+
+    final pool = ref.read(sshConnectionPoolProvider);
+
+    // Already connected; skip.
+    if (pool.isConnected(server.id)) {
+      setState(() => _connectionError = null);
+      return true;
+    }
+
+    setState(() {
+      _isConnecting = true;
+      _connectionError = null;
+    });
+
+    try {
+      pool.register(server);
+      await pool.getConnection(server.id);
+
+      if (mounted) {
+        setState(() => _isConnecting = false);
+      }
+      return true;
+    } on Exception catch (e) {
+      if (mounted) {
+        setState(() {
+          _isConnecting = false;
+          _connectionError = 'Connection failed: $e';
+        });
+      }
+      return false;
+    }
+  }
+
+  /// Handle server selection change.
+  ///
+  /// Resets connection error and worktree state when the server changes.
+  void _onServerChanged(ServerConfig? server) {
+    setState(() {
+      _selectedServer = server;
+      _connectionError = null;
+      _worktrees = [];
+      _selectedWorktree = null;
+      _worktreeError = null;
+    });
+  }
+
   /// Fetch worktrees for the repository path entered by the user.
+  ///
+  /// Connects to the selected server first if not already connected.
   Future<void> _fetchWorktrees() async {
     final repoPath = _repoPathController.text.trim();
     if (repoPath.isEmpty) {
@@ -66,13 +129,24 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
       return;
     }
 
+    if (_selectedServer == null) {
+      setState(() => _worktreeError = 'Select a server first');
+      return;
+    }
+
+    // Ensure connection before fetching worktrees.
+    final connected = await _connectToServer();
+    if (!connected) return;
+
     setState(() {
       _isLoadingWorktrees = true;
       _worktreeError = null;
     });
 
     try {
-      final worktreeService = ref.read(worktreeServiceProvider);
+      final pool = ref.read(sshConnectionPoolProvider);
+      final ssh = await pool.getConnection(_selectedServer!.id);
+      final worktreeService = WorktreeService(ssh);
       final worktrees = await worktreeService.listWorktrees(repoPath);
       setState(() {
         _worktrees = worktrees;
@@ -95,10 +169,14 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     final branch = _newBranchController.text.trim();
     if (repoPath.isEmpty || branch.isEmpty) return;
 
+    if (_selectedServer == null) return;
+
     setState(() => _isCreatingWorktree = true);
 
     try {
-      final worktreeService = ref.read(worktreeServiceProvider);
+      final pool = ref.read(sshConnectionPoolProvider);
+      final ssh = await pool.getConnection(_selectedServer!.id);
+      final worktreeService = WorktreeService(ssh);
       final newWorktree =
           await worktreeService.createWorktree(repoPath, branch);
 
@@ -143,6 +221,13 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     setState(() => _isCreating = true);
 
     try {
+      // Ensure SSH connection is established before creating the session.
+      final connected = await _connectToServer();
+      if (!connected) {
+        setState(() => _isCreating = false);
+        return;
+      }
+
       final sessionService = ref.read(sessionServiceProvider);
       final engine = _selectedEngine!;
       final workingDir = _effectiveWorkingDir;
@@ -220,10 +305,11 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
                 value: _selectedServer,
                 items: servers,
                 itemLabel: (s) => s.label,
-                onChanged: (value) => setState(() => _selectedServer = value),
+                onChanged: _onServerChanged,
                 validator: (value) =>
                     value == null ? 'Server is required' : null,
               ),
+              _buildConnectionStatus(),
               const SizedBox(height: 16),
               _buildDropdown<EngineProfile>(
                 label: 'Engine',
@@ -269,6 +355,99 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
         ),
       ),
     );
+  }
+
+  /// Builds the SSH connection status indicator below the server dropdown.
+  Widget _buildConnectionStatus() {
+    if (_selectedServer == null) return const SizedBox.shrink();
+
+    // Check pool connection state for the selected server.
+    final pool = ref.watch(sshConnectionPoolProvider);
+    final isConnected = pool.isConnected(_selectedServer!.id);
+
+    if (_isConnecting) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: _accent,
+              ),
+            ),
+            SizedBox(width: 8),
+            Text(
+              'Connecting...',
+              style: TextStyle(
+                color: _textSecondary,
+                fontSize: 12,
+                fontFamily: 'JetBrains Mono',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_connectionError != null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: Row(
+          children: [
+            const Icon(Icons.error_outline, color: _errorRed, size: 14),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _connectionError!,
+                style: const TextStyle(
+                  color: _errorRed,
+                  fontSize: 12,
+                  fontFamily: 'JetBrains Mono',
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _connectToServer,
+              child: const Text(
+                'Retry',
+                style: TextStyle(
+                  color: _accent,
+                  fontSize: 12,
+                  fontFamily: 'JetBrains Mono',
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (isConnected) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: Color(0xFF4ADE80), size: 14),
+            SizedBox(width: 8),
+            Text(
+              'Connected',
+              style: TextStyle(
+                color: Color(0xFF4ADE80),
+                fontSize: 12,
+                fontFamily: 'JetBrains Mono',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
   }
 
   /// Builds a section header label.
@@ -669,11 +848,15 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
   }
 
   /// Builds the primary create session button.
+  ///
+  /// Shows a connecting or creating spinner depending on the current state.
   Widget _buildCreateButton() {
+    final isWorking = _isCreating || _isConnecting;
+
     return SizedBox(
       height: 48,
       child: ElevatedButton(
-        onPressed: _isCreating ? null : _createSession,
+        onPressed: isWorking ? null : _createSession,
         style: ElevatedButton.styleFrom(
           backgroundColor: _accent,
           foregroundColor: _background,
@@ -683,14 +866,28 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
           ),
           elevation: 0,
         ),
-        child: _isCreating
-            ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: _background,
-                ),
+        child: isWorking
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _background,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    _isConnecting ? 'Connecting...' : 'Creating...',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
               )
             : const Text(
                 'Create Session',
