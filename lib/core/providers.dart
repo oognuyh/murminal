@@ -3,9 +3,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:murminal/data/models/audio_session_state.dart';
+import 'package:murminal/data/models/engine_profile.dart';
 import 'package:murminal/data/models/server_config.dart';
 import 'package:murminal/data/models/session.dart';
 import 'package:murminal/data/models/voice_provider.dart';
+import 'package:murminal/data/repositories/engine_profile_repository.dart';
 import 'package:murminal/data/repositories/server_repository.dart';
 import 'package:murminal/data/repositories/session_repository.dart';
 import 'package:murminal/data/services/audio_session_service.dart';
@@ -271,4 +273,48 @@ final voiceSupervisorStateProvider =
     StreamProvider.family<VoiceSupervisorState, String>((ref, serverId) {
   final supervisor = ref.watch(voiceSupervisorProvider(serverId));
   return supervisor.state;
+});
+
+/// Repository for user-created engine profiles.
+final engineProfileRepositoryProvider =
+    Provider<EngineProfileRepository>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return EngineProfileRepository(prefs);
+});
+
+/// All engine profiles: bundled + user-created.
+///
+/// User profiles override bundled profiles with the same name.
+/// Invalidate this provider after saving/deleting user profiles
+/// to trigger UI refresh.
+final allEngineProfilesProvider = Provider<List<EngineProfile>>((ref) {
+  final registry = ref.watch(engineRegistryProvider);
+  final repo = ref.watch(engineProfileRepositoryProvider);
+
+  final bundled = registry.profiles;
+  final user = repo.getAll();
+
+  // Build a combined map; user profiles override bundled by name.
+  final combined = <String, EngineProfile>{};
+  for (final profile in bundled) {
+    combined[profile.name] = profile;
+  }
+  for (final profile in user) {
+    combined[profile.name] = profile;
+  }
+
+  return combined.values.toList()
+    ..sort((a, b) => a.displayName.compareTo(b.displayName));
+});
+
+/// Set of bundled profile names (read-only, not user-editable).
+final bundledProfileNamesProvider = Provider<Set<String>>((ref) {
+  final registry = ref.watch(engineRegistryProvider);
+  return registry.profiles.map((p) => p.name).toSet();
+});
+
+/// Set of user profile names (editable/deletable).
+final userProfileNamesProvider = Provider<Set<String>>((ref) {
+  final repo = ref.watch(engineProfileRepositoryProvider);
+  return repo.getAll().map((p) => p.name).toSet();
 });
