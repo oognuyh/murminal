@@ -229,17 +229,21 @@ class GeminiRealtimeService extends RealtimeVoiceService {
   }
 
   void _onMessage(dynamic raw) {
-    debugPrint('Gemini ← type=${raw.runtimeType}, len=${raw is String ? raw.length : "?"}');
-    if (raw is! String) {
-      debugPrint('Gemini ← non-string data: ${raw.runtimeType}');
+    String jsonStr;
+    if (raw is String) {
+      jsonStr = raw;
+    } else if (raw is List<int>) {
+      jsonStr = utf8.decode(raw, allowMalformed: true);
+    } else {
+      debugPrint('Gemini ← unexpected type: ${raw.runtimeType}');
       return;
     }
 
     // Log first 200 chars of every incoming message for debugging.
-    final preview = raw.length > 200 ? '${raw.substring(0, 200)}...' : raw;
+    final preview = jsonStr.length > 200 ? '${jsonStr.substring(0, 200)}...' : jsonStr;
     debugPrint('Gemini ← $preview');
 
-    final event = GeminiRealtimeEvent.fromJson(raw);
+    final event = GeminiRealtimeEvent.fromJson(jsonStr);
     _dispatchEvent(event);
   }
 
