@@ -115,11 +115,15 @@ class _VoiceSessionScreenState extends ConsumerState<VoiceSessionScreen>
     }
 
     debugPrint('Voice: starting with ${provider.name}, key=${apiKey.substring(0, 8)}...');
+    debugPrint('Voice: serverId=${widget.serverId}, isLocal=${provider.isLocal}');
     try {
+      debugPrint('Voice: reading supervisor provider...');
       final supervisor = ref.read(voiceSupervisorProvider(widget.serverId));
+      debugPrint('Voice: supervisor created, calling start()...');
       await supervisor.start(apiKey, useLocal: provider.isLocal);
-    } catch (e) {
-      debugPrint('Voice: start failed: $e');
+      debugPrint('Voice: start() completed');
+    } catch (e, st) {
+      debugPrint('Voice: start failed: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
