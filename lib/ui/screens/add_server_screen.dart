@@ -54,6 +54,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
   _AuthType _authType = _AuthType.sshKey;
   bool _isTesting = false;
   bool _isSaving = false;
+  bool _obscurePassword = true;
   _TestResult? _testResult;
 
   bool get _isEditing => widget.existingConfig != null;
@@ -209,42 +210,60 @@ class _AddServerScreenState extends State<AddServerScreen> {
         backgroundColor: _background,
         foregroundColor: _textPrimary,
         elevation: 0,
-        title: Text(
-          _isEditing ? 'Edit Server' : 'Add Server',
-          style: const TextStyle(
-            fontFamily: 'JetBrains Mono',
-            fontSize: 18,
-            letterSpacing: 1,
+        leading: GestureDetector(
+          onTap: () => Navigator.of(context).pop(),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: 12),
+              Icon(Icons.chevron_left, color: _textSecondary, size: 20),
+              Text(
+                'Servers',
+                style: TextStyle(
+                  color: _textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ],
           ),
         ),
-        leading: IconButton(
-          icon: const Icon(Icons.close),
-          onPressed: () => Navigator.of(context).pop(),
+        leadingWidth: 110,
+        title: Text(
+          _isEditing ? 'EDIT SERVER' : 'ADD SERVER',
+          style: const TextStyle(
+            fontFamily: 'JetBrains Mono',
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.5,
+          ),
         ),
+        centerTitle: false,
+        actions: const [SizedBox(width: 16)],
       ),
       body: SafeArea(
         child: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             children: [
               _buildTextField(
                 controller: _labelController,
                 label: 'Label',
-                hint: 'My Server',
+                hint: 'e.g. mac-mini',
                 validator: _requiredValidator('Label is required'),
                 textInputAction: TextInputAction.next,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               _buildTextField(
                 controller: _hostController,
                 label: 'Host',
-                hint: '192.168.1.100 or example.com',
+                hint: '192.168.1.10 or hostname',
                 validator: _requiredValidator('Host is required'),
                 keyboardType: TextInputType.url,
                 textInputAction: TextInputAction.next,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               _buildTextField(
                 controller: _portController,
                 label: 'Port',
@@ -263,7 +282,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 },
                 textInputAction: TextInputAction.next,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               _buildTextField(
                 controller: _usernameController,
                 label: 'Username',
@@ -273,30 +292,14 @@ class _AddServerScreenState extends State<AddServerScreen> {
               ),
               const SizedBox(height: 24),
               _buildAuthSelector(),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               if (_authType == _AuthType.sshKey) ...[
                 _buildKeyFileField(),
-                const SizedBox(height: 16),
-                _buildTextField(
-                  controller: _passphraseController,
-                  label: 'Passphrase',
-                  hint: 'Optional',
-                  obscureText: true,
-                  textInputAction: TextInputAction.done,
-                ),
               ] else ...[
-                _buildTextField(
-                  controller: _passwordController,
-                  label: 'Password',
-                  hint: 'Enter password',
-                  obscureText: true,
-                  validator: _requiredValidator('Password is required'),
-                  textInputAction: TextInputAction.done,
-                ),
+                _buildPasswordField(),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               _buildTestConnectionResult(),
-              const SizedBox(height: 16),
               _buildTestConnectionButton(),
               const SizedBox(height: 12),
               _buildSaveButton(),
@@ -308,6 +311,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     );
   }
 
+  /// Builds a labeled text input field with dark surface styling.
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
@@ -317,6 +321,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     List<TextInputFormatter>? inputFormatters,
     bool obscureText = false,
     TextInputAction? textInputAction,
+    Widget? suffixIcon,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,9 +330,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
           label,
           style: const TextStyle(
             color: _textSecondary,
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: FontWeight.w500,
-            letterSpacing: 0.5,
+            letterSpacing: 0.3,
           ),
         ),
         const SizedBox(height: 8),
@@ -338,44 +343,56 @@ class _AddServerScreenState extends State<AddServerScreen> {
           inputFormatters: inputFormatters,
           obscureText: obscureText,
           textInputAction: textInputAction,
-          style: const TextStyle(color: _textPrimary, fontFamily: 'JetBrains Mono', fontSize: 13),
-          cursorColor: _accent,
-          decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: _textMuted, fontFamily: 'JetBrains Mono', fontSize: 13),
-            filled: true,
-            fillColor: _surface,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _surfaceBorder),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _surfaceBorder),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _accent, width: 1.5),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _errorRed),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(color: _errorRed, width: 1.5),
-            ),
-            errorStyle: const TextStyle(color: _errorRed, fontSize: 12),
+          style: const TextStyle(
+            color: _textPrimary,
+            fontFamily: 'JetBrains Mono',
+            fontSize: 14,
           ),
+          cursorColor: _accent,
+          decoration: _inputDecoration(hint: hint, suffixIcon: suffixIcon),
         ),
       ],
     );
   }
 
+  /// Shared input decoration matching the wireframe dark input style.
+  InputDecoration _inputDecoration({String? hint, Widget? suffixIcon}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(
+        color: _textMuted,
+        fontFamily: 'JetBrains Mono',
+        fontSize: 14,
+      ),
+      filled: true,
+      fillColor: _surface,
+      suffixIcon: suffixIcon,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: _surfaceBorder),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: _surfaceBorder),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: _accent, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: _errorRed),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: _errorRed, width: 1.5),
+      ),
+      errorStyle: const TextStyle(color: _errorRed, fontSize: 12),
+    );
+  }
+
+  /// Builds the SSH Key / Password authentication toggle.
   Widget _buildAuthSelector() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -384,9 +401,9 @@ class _AddServerScreenState extends State<AddServerScreen> {
           'Authentication',
           style: TextStyle(
             color: _textSecondary,
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: FontWeight.w500,
-            letterSpacing: 0.5,
+            letterSpacing: 0.3,
           ),
         ),
         const SizedBox(height: 8),
@@ -419,6 +436,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
     );
   }
 
+  /// Builds a single auth toggle option pill.
   Widget _buildAuthOption({
     required String label,
     required _AuthType value,
@@ -444,7 +462,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? const Color(0xFF0A0F1C) : _textMuted,
+            color: isSelected ? _background : _textMuted,
             fontSize: 14,
             fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
           ),
@@ -453,89 +471,94 @@ class _AddServerScreenState extends State<AddServerScreen> {
     );
   }
 
+  /// Builds the key file field with an integrated file picker icon.
   Widget _buildKeyFileField() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Private Key File',
+          'Key File',
           style: TextStyle(
             color: _textSecondary,
-            fontSize: 12,
+            fontSize: 13,
             fontWeight: FontWeight.w500,
-            letterSpacing: 0.5,
+            letterSpacing: 0.3,
           ),
         ),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextFormField(
-                controller: _keyPathController,
-                readOnly: true,
-                style: const TextStyle(color: _textPrimary, fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: 'Select key file...',
-                  hintStyle: const TextStyle(color: _textMuted, fontSize: 14),
-                  filled: true,
-                  fillColor: _surface,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 14,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: _surfaceBorder),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: _surfaceBorder),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: _accent, width: 1.5),
-                  ),
-                  errorBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: _errorRed),
-                  ),
-                  errorStyle: const TextStyle(
-                    color: _errorRed,
-                    fontSize: 12,
-                  ),
-                ),
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Key file is required';
-                  }
-                  return null;
-                },
-              ),
+        TextFormField(
+          controller: _keyPathController,
+          readOnly: true,
+          onTap: _pickKeyFile,
+          style: const TextStyle(
+            color: _textPrimary,
+            fontFamily: 'JetBrains Mono',
+            fontSize: 14,
+          ),
+          cursorColor: _accent,
+          decoration: _inputDecoration(
+            hint: '~/.ssh/id_ed25519',
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.folder_open, color: _textMuted, size: 20),
+              onPressed: _pickKeyFile,
             ),
-            const SizedBox(width: 10),
-            SizedBox(
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _pickKeyFile,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _surface,
-                  foregroundColor: _accent,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    side: const BorderSide(color: _surfaceBorder),
-                  ),
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                ),
-                child: const Icon(Icons.folder_open, size: 20),
-              ),
-            ),
-          ],
+          ),
+          validator: (value) {
+            if (value == null || value.isEmpty) {
+              return 'Key file is required';
+            }
+            return null;
+          },
         ),
       ],
     );
   }
 
+  /// Builds the password field with a visibility toggle.
+  Widget _buildPasswordField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Password',
+          style: TextStyle(
+            color: _textSecondary,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            letterSpacing: 0.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: _passwordController,
+          obscureText: _obscurePassword,
+          textInputAction: TextInputAction.done,
+          style: const TextStyle(
+            color: _textPrimary,
+            fontFamily: 'JetBrains Mono',
+            fontSize: 14,
+          ),
+          cursorColor: _accent,
+          decoration: _inputDecoration(
+            hint: 'Enter password',
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                color: _textMuted,
+                size: 20,
+              ),
+              onPressed: () => setState(() {
+                _obscurePassword = !_obscurePassword;
+              }),
+            ),
+          ),
+          validator: _requiredValidator('Password is required'),
+        ),
+      ],
+    );
+  }
+
+  /// Displays the connection test result banner.
   Widget _buildTestConnectionResult() {
     final result = _testResult;
     if (result == null) return const SizedBox.shrink();
@@ -547,31 +570,35 @@ class _AddServerScreenState extends State<AddServerScreen> {
         ? 'Connection successful'
         : 'Connection failed: ${(result as _TestFailure).message}';
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(color: color, fontSize: 13),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: color, fontSize: 13),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
+  /// Builds the outlined "Test Connection" button.
   Widget _buildTestConnectionButton() {
     return SizedBox(
-      height: 48,
+      height: 50,
       child: OutlinedButton.icon(
         onPressed: _isTesting ? null : _testConnection,
         icon: _isTesting
@@ -583,22 +610,30 @@ class _AddServerScreenState extends State<AddServerScreen> {
                   color: _accent,
                 ),
               )
-            : const Icon(Icons.wifi_tethering, size: 18),
-        label: Text(_isTesting ? 'Testing...' : 'Test Connection'),
+            : const Icon(Icons.settings_ethernet, size: 18),
+        label: Text(
+          _isTesting ? 'Testing...' : 'Test Connection',
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          ),
+        ),
         style: OutlinedButton.styleFrom(
           foregroundColor: _accent,
-          side: const BorderSide(color: _accent),
+          side: const BorderSide(color: _accent, width: 1.5),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
         ),
       ),
     );
   }
 
+  /// Builds the filled "Save Server" button.
   Widget _buildSaveButton() {
     return SizedBox(
-      height: 48,
+      height: 50,
       child: ElevatedButton(
         onPressed: _isSaving ? null : _saveServer,
         style: ElevatedButton.styleFrom(
@@ -606,7 +641,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
           foregroundColor: _background,
           disabledBackgroundColor: _accent.withValues(alpha: 0.4),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
           elevation: 0,
         ),
@@ -623,7 +658,7 @@ class _AddServerScreenState extends State<AddServerScreen> {
                 _isEditing ? 'Save Changes' : 'Save Server',
                 style: const TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
                 ),
               ),
