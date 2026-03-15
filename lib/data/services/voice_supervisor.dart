@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:murminal/data/models/audio_session_state.dart';
 import 'package:murminal/data/models/output_change_event.dart';
 import 'package:murminal/data/models/tool_definition.dart';
@@ -230,10 +232,12 @@ class VoiceSupervisor {
   /// When [useLocal] is true, the local STT/TTS pipeline is used instead
   /// of the Realtime WebSocket API.
   Future<void> start(String apiKey, {bool useLocal = false}) async {
+    debugPrint('VoiceSupervisor.start() currentState=$_currentState');
     if (_currentState != VoiceSupervisorState.idle &&
         _currentState != VoiceSupervisorState.error) {
-      developer.log('Already running, ignoring start()', name: _tag);
-      return;
+      debugPrint('VoiceSupervisor: already running ($_currentState), resetting to idle');
+      // Force reset so user can retry.
+      _setState(VoiceSupervisorState.idle);
     }
 
     _setState(VoiceSupervisorState.connecting);
@@ -242,9 +246,9 @@ class VoiceSupervisor {
 
     try {
       // 1. Activate iOS audio session for background playback/recording.
-      developer.log('Step 1: activating audio session...', name: _tag);
+      debugPrint('Step 1: activating audio session...');
       await _audioSession.activate();
-      developer.log('Step 1: audio session activated', name: _tag);
+      debugPrint('Step 1: audio session activated');
 
       // 1a. Listen for audio session interruptions (phone calls, other apps).
       _audioStateSub?.cancel();
@@ -253,9 +257,9 @@ class VoiceSupervisor {
       );
 
       // 2. Build initial system prompt with current server/session state.
-      developer.log('Step 2: building system prompt...', name: _tag);
+      debugPrint('Step 2: building system prompt...');
       final prompt = await _buildSystemPrompt();
-      developer.log('Step 2: prompt built (${prompt.length} chars)', name: _tag);
+      debugPrint('Step 2: prompt built (${prompt.length} chars)');
 
       if (_useLocal) {
         // -- Local pipeline: STT -> LM -> TTS --
@@ -271,20 +275,20 @@ class VoiceSupervisor {
       } else {
         // -- Realtime pipeline: WebSocket audio-in/audio-out --
         // Request mic permission and start recording.
-        developer.log('Step 3: requesting mic permission...', name: _tag);
+        debugPrint('Step 3: requesting mic permission...');
         final granted = await _mic.requestPermission();
-        developer.log('Step 3: mic permission=$granted', name: _tag);
+        debugPrint('Step 3: mic permission=$granted');
         if (!granted) {
           throw StateError('Microphone permission denied');
         }
-        developer.log('Step 4: starting mic recording...', name: _tag);
+        debugPrint('Step 4: starting mic recording...');
         final micStream = await _mic.startRecording();
-        developer.log('Step 4: mic recording started', name: _tag);
+        debugPrint('Step 4: mic recording started');
 
         // Connect to the Realtime WebSocket API with tools.
-        developer.log('Step 5: connecting to ${_voiceService.runtimeType}...', name: _tag);
+        debugPrint('Step 5: connecting to ${_voiceService.runtimeType}...');
         await _voiceService.connect(apiKey, tools: toolDefinitions);
-        developer.log('Step 5: connected', name: _tag);
+        debugPrint('Step 5: connected');
         await _voiceService.updateSystemPrompt(prompt);
 
         // Subscribe to voice events.
