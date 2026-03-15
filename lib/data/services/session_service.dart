@@ -110,6 +110,16 @@ class SessionService {
     return _repository.findById(sessionId);
   }
 
+  /// Synchronously list sessions from local storage only (no tmux reconciliation).
+  ///
+  /// Used by [ToolExecutor] to resolve session names to IDs without
+  /// requiring an async tmux call.
+  List<Session> listSessionsSync({String? serverId}) {
+    return serverId != null
+        ? _repository.loadByServer(serverId)
+        : _repository.loadAll();
+  }
+
   /// Update the status of a session by [sessionId].
   Future<void> updateStatus(String sessionId, SessionStatus status) async {
     final session = _repository.findById(sessionId);

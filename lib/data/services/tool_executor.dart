@@ -81,28 +81,57 @@ class ToolExecutor {
     }
   }
 
+  /// Resolve a session name or ID to the actual session ID used by tmux.
+  ///
+  /// The voice model may pass the human-readable name (e.g. "Claude Code-HomeLab")
+  /// instead of the internal ID. This finds the matching session and returns its ID.
+  String _resolveSessionId(String nameOrId) {
+    final sessions = _sessionService.listSessionsSync(serverId: serverId);
+
+    // Exact match on id.
+    for (final s in sessions) {
+      if (s.id == nameOrId) return s.id;
+    }
+    // Exact match on name.
+    for (final s in sessions) {
+      if (s.name == nameOrId) return s.id;
+    }
+    // Partial/fuzzy match on name (case-insensitive contains).
+    final lower = nameOrId.toLowerCase();
+    for (final s in sessions) {
+      if (s.name.toLowerCase().contains(lower) ||
+          s.id.toLowerCase().contains(lower)) {
+        return s.id;
+      }
+    }
+    // Fallback: return as-is and let tmux fail with a clear error.
+    debugPrint('ToolExecutor: could not resolve session "$nameOrId"');
+    return nameOrId;
+  }
+
   /// Send a shell command to a tmux session and capture the resulting output.
   Future<ToolResult> _sendCommand(Map<String, dynamic> args) async {
-    final sessionName = args['session_name'] as String;
+    final rawName = args['session_name'] as String;
+    final sessionId = _resolveSessionId(rawName);
     final command = args['command'] as String;
 
-    debugPrint('ToolExecutor: send_command session="$sessionName" cmd="$command"');
-    await _tmux.sendKeys(sessionName, command);
+    debugPrint('ToolExecutor: send_command session="$rawName" → id="$sessionId" cmd="$command"');
+    await _tmux.sendKeys(sessionId, command);
     // Wait for command output to appear, then capture.
     await Future<void>.delayed(sendCommandDelay);
-    final output = await _tmux.capturePane(sessionName);
-    debugPrint('ToolExecutor: output=${output.length} chars, '
-        'preview="${output.length > 100 ? output.substring(0, 100) : output}"');
+    final output = await _tmux.capturePane(sessionId);
+    debugPrint('ToolExecutor: output=${output.length} chars');
 
     return ToolResult.ok('send_command', {'output': output});
   }
 
   /// Capture the current terminal output of a tmux session.
   Future<ToolResult> _getSessionStatus(Map<String, dynamic> args) async {
-    final sessionName = args['session_name'] as String;
+    final rawName = args['session_name'] as String;
+    final sessionId = _resolveSessionId(rawName);
     final lines = args['lines'] as int? ?? 50;
 
-    final output = await _tmux.capturePane(sessionName, lines: lines);
+    final output = await _tmux.capturePane(sessionId, lines: lines);
     return ToolResult.ok('get_session_status', {'output': output});
   }
 
