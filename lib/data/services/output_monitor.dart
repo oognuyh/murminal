@@ -39,7 +39,7 @@ class OutputMonitor {
   final List<String> _batchSessions = [];
 
   /// Base polling interval for batch monitoring.
-  static const _batchBaseInterval = Duration(milliseconds: 1500);
+  Duration _batchBaseInterval = const Duration(milliseconds: 1500);
 
   /// Additional interval per session beyond the first.
   static const _batchPerSessionMs = 200;
@@ -51,6 +51,27 @@ class OutputMonitor {
   static const maxConsecutiveFailures = 3;
 
   OutputMonitor(this._tmux);
+
+  /// The current base polling interval.
+  Duration get baseInterval => _batchBaseInterval;
+
+  /// Update the base polling interval and restart any active batch monitoring.
+  ///
+  /// The [interval] is clamped to 500ms–5000ms. If batch monitoring is active,
+  /// the timer is restarted with the new interval immediately.
+  void setBaseInterval(Duration interval) {
+    final clampedMs = interval.inMilliseconds.clamp(500, 5000);
+    _batchBaseInterval = Duration(milliseconds: clampedMs);
+
+    // Restart batch monitoring with the new interval if active.
+    if (_batchTimer != null && _batchSessions.isNotEmpty) {
+      _batchTimer!.cancel();
+      final newInterval = computeBatchInterval(_batchSessions.length);
+      _batchTimer = Timer.periodic(newInterval, (_) async {
+        await _batchPoll();
+      });
+    }
+  }
 
   /// Stream of output change events across all monitored sessions.
   Stream<OutputChangeEvent> get changes => _changeController.stream;

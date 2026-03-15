@@ -38,6 +38,15 @@ final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
   return const FlutterSecureStorage();
 });
 
+/// Global polling interval for output monitoring (in seconds).
+///
+/// Range: 0.5s to 5.0s, default 1.5s. Updated from settings UI and
+/// persisted to [SharedPreferences] under 'polling_interval'.
+final pollingIntervalProvider = StateProvider<double>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return prefs.getDouble('polling_interval') ?? 1.5;
+});
+
 /// Currently selected voice provider.
 ///
 /// Defaults to [VoiceProvider.qwen]. Updated from the settings UI.
@@ -203,9 +212,22 @@ final realtimeVoiceServiceProvider = Provider<RealtimeVoiceService>((ref) {
 });
 
 /// Output monitor for detecting tmux pane changes.
+///
+/// Reads the polling interval from [pollingIntervalProvider] and applies it
+/// as the base interval. Uses [ref.listen] so interval changes take effect
+/// immediately without recreating the monitor.
 final outputMonitorProvider = Provider<OutputMonitor>((ref) {
   final tmux = ref.watch(tmuxControllerProvider);
   final monitor = OutputMonitor(tmux);
+
+  // Apply current polling interval and listen for changes.
+  final interval = ref.read(pollingIntervalProvider);
+  monitor.setBaseInterval(Duration(milliseconds: (interval * 1000).round()));
+
+  ref.listen<double>(pollingIntervalProvider, (_, next) {
+    monitor.setBaseInterval(Duration(milliseconds: (next * 1000).round()));
+  });
+
   ref.onDispose(monitor.dispose);
   return monitor;
 });
