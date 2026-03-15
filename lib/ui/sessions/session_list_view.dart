@@ -11,6 +11,8 @@ const _surface = Color(0xFF1E293B);
 const _accent = Color(0xFF22D3EE);
 const _textPrimary = Color(0xFFFFFFFF);
 const _textMuted = Color(0xFF64748B);
+const _green = Color(0xFF4ADE80);
+const _red = Color(0xFFF87171);
 
 /// Filter tabs for the session list.
 enum _SessionFilter {
@@ -25,8 +27,9 @@ enum _SessionFilter {
 
 /// Session list screen displaying all sessions across all servers.
 ///
-/// Provides filter tabs (All, Running, Done, Idle), session cards with
-/// status indicators, and actions for creating and managing sessions.
+/// Provides filter tabs (All, Running, Done, Idle) with underline indicator,
+/// session cards with status-colored left border, and actions for creating
+/// and managing sessions. Matches the pen wireframe design.
 class SessionListView extends ConsumerStatefulWidget {
   const SessionListView({super.key});
 
@@ -60,23 +63,52 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
     return serverId.length > 12 ? '${serverId.substring(0, 12)}...' : serverId;
   }
 
-  /// Status icon character for the given session status.
-  String _statusIcon(SessionStatus status) {
+  /// Left border color for the given session status.
+  Color _statusBorderColor(SessionStatus status) {
     return switch (status) {
-      SessionStatus.running => '◐',
-      SessionStatus.done => '✓',
-      SessionStatus.idle => '○',
-      SessionStatus.error => '✗',
+      SessionStatus.running => _accent,
+      SessionStatus.done => _green,
+      SessionStatus.idle => _textMuted.withValues(alpha: 0.4),
+      SessionStatus.error => _red,
     };
   }
 
-  /// Status color for the given session status.
-  Color _statusColor(SessionStatus status) {
+  /// Status indicator widget for the given session status.
+  Widget _statusIndicator(SessionStatus status) {
     return switch (status) {
-      SessionStatus.running => _accent,
-      SessionStatus.done => const Color(0xFF4ADE80),
-      SessionStatus.idle => _textMuted,
-      SessionStatus.error => const Color(0xFFF87171),
+      SessionStatus.running => Container(
+          width: 8,
+          height: 8,
+          decoration: const BoxDecoration(
+            color: _accent,
+            shape: BoxShape.circle,
+          ),
+        ),
+      SessionStatus.done => const Text(
+          '\u2713',
+          style: TextStyle(
+            color: _green,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      SessionStatus.idle => Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: Colors.transparent,
+            shape: BoxShape.circle,
+            border: Border.all(color: _textMuted, width: 1.5),
+          ),
+        ),
+      SessionStatus.error => const Text(
+          '\u2717',
+          style: TextStyle(
+            color: _red,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
     };
   }
 
@@ -131,7 +163,7 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
                 _buildActionTile(
                   icon: Icons.stop_circle_outlined,
                   label: 'Terminate',
-                  color: const Color(0xFFF87171),
+                  color: _red,
                   onTap: () async {
                     Navigator.pop(context);
                     final service = ref.read(sessionServiceProvider);
@@ -142,7 +174,7 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
               _buildActionTile(
                 icon: Icons.delete_outline,
                 label: 'Delete',
-                color: const Color(0xFFF87171),
+                color: _red,
                 onTap: () async {
                   Navigator.pop(context);
                   final service = ref.read(sessionServiceProvider);
@@ -179,7 +211,7 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
     );
   }
 
-  /// Navigate to new session creation (placeholder).
+  /// Navigate to new session creation.
   void _onAddSession() {
     context.push('/sessions/new');
   }
@@ -198,9 +230,9 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
             children: [
               const SizedBox(height: 24),
               _buildHeader(),
-              const SizedBox(height: 20),
-              _buildFilterTabs(),
               const SizedBox(height: 24),
+              _buildFilterTabs(),
+              const SizedBox(height: 20),
               Expanded(
                 child: sessionsAsync.when(
                   data: (sessions) {
@@ -238,7 +270,7 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
     );
   }
 
-  /// Title row with SESSIONS heading and add button.
+  /// Title row with SESSIONS heading and cyan circular add button.
   Widget _buildHeader() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -256,16 +288,16 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
         GestureDetector(
           onTap: _onAddSession,
           child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(8),
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: _accent,
+              shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.add,
-              color: _accent,
-              size: 22,
+              color: _background,
+              size: 20,
             ),
           ),
         ),
@@ -273,49 +305,49 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
     );
   }
 
-  /// Segmented filter tabs for session status filtering.
+  /// Underline-style filter tabs for session status filtering.
   Widget _buildFilterTabs() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        children: _SessionFilter.values.map((filter) {
-          final isActive = _activeFilter == filter;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _activeFilter = filter),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: isActive ? _accent : Colors.transparent,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                alignment: Alignment.center,
-                child: Text(
+    return Row(
+      children: _SessionFilter.values.map((filter) {
+        final isActive = _activeFilter == filter;
+        return Padding(
+          padding: const EdgeInsets.only(right: 24),
+          child: GestureDetector(
+            onTap: () => setState(() => _activeFilter = filter),
+            behavior: HitTestBehavior.opaque,
+            child: Column(
+              children: [
+                Text(
                   filter.label,
                   style: TextStyle(
-                    color: isActive ? const Color(0xFF0A0F1C) : _textMuted,
-                    fontSize: 12,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                    color: isActive ? _textPrimary : _textMuted,
+                    fontSize: 14,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                     fontFamily: 'JetBrains Mono',
                   ),
                 ),
-              ),
+                const SizedBox(height: 8),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  height: 2,
+                  width: isActive ? 24 : 0,
+                  decoration: BoxDecoration(
+                    color: isActive ? _accent : Colors.transparent,
+                    borderRadius: BorderRadius.circular(1),
+                  ),
+                ),
+              ],
             ),
-          );
-        }).toList(),
-      ),
+          ),
+        );
+      }).toList(),
     );
   }
 
-  /// Individual session card with status icon, engine, server, and activity.
+  /// Session card with status-colored left border, status indicator,
+  /// engine name (bold), server name (right-aligned), and branch/task row.
   Widget _buildSessionCard(Session session) {
-    final icon = _statusIcon(session.status);
-    final color = _statusColor(session.status);
+    final borderColor = _statusBorderColor(session.status);
     final server = _serverLabel(session.serverId);
     final activity = _formatActivity(session.createdAt);
 
@@ -325,80 +357,85 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
         onTap: () => _onSessionTap(session),
         onLongPress: () => _onSessionLongPress(session),
         child: Container(
-          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: _surface,
             borderRadius: BorderRadius.circular(12),
+            border: Border(
+              left: BorderSide(color: borderColor, width: 3),
+            ),
           ),
-          child: Row(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Status icon.
-              SizedBox(
-                width: 24,
-                child: Text(
-                  icon,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              // Session info.
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
+              // Top row: status dot + engine name (left), server name (right).
+              Row(
+                children: [
+                  _statusIndicator(session.status),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
                       session.engine,
                       style: const TextStyle(
                         color: _textPrimary,
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                         fontFamily: 'JetBrains Mono',
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$server  ·  $activity',
-                      style: const TextStyle(
-                        color: _textMuted,
-                        fontSize: 12,
-                        fontFamily: 'JetBrains Mono',
-                      ),
+                  ),
+                  Text(
+                    server,
+                    style: const TextStyle(
+                      color: _textMuted,
+                      fontSize: 12,
+                      fontFamily: 'JetBrains Mono',
                     ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              // Bottom row: branch and/or activity info.
+              Padding(
+                padding: const EdgeInsets.only(left: 18),
+                child: Row(
+                  children: [
                     if (session.worktreeBranch != null) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.account_tree_outlined,
-                            size: 12,
+                      Icon(
+                        Icons.account_tree_outlined,
+                        size: 12,
+                        color: _accent.withValues(alpha: 0.7),
+                      ),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          session.worktreeBranch!,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
                             color: _accent.withValues(alpha: 0.7),
+                            fontSize: 11,
+                            fontFamily: 'JetBrains Mono',
                           ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              session.worktreeBranch!,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: _accent.withValues(alpha: 0.7),
-                                fontSize: 11,
-                                fontFamily: 'JetBrains Mono',
-                              ),
-                            ),
-                          ),
-                        ],
+                        ),
+                      ),
+                      Text(
+                        '  \u00b7  ',
+                        style: TextStyle(
+                          color: _textMuted.withValues(alpha: 0.6),
+                          fontSize: 11,
+                        ),
                       ),
                     ],
+                    Text(
+                      activity,
+                      style: const TextStyle(
+                        color: _textMuted,
+                        fontSize: 11,
+                        fontFamily: 'JetBrains Mono',
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              // Chevron right.
-              const Icon(
-                Icons.chevron_right,
-                color: _textMuted,
-                size: 20,
               ),
             ],
           ),
