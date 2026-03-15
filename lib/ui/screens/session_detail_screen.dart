@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xterm/xterm.dart';
 
 import 'package:murminal/core/providers.dart';
+import 'package:murminal/data/models/session.dart';
 import 'package:murminal/data/services/ssh_service.dart' as ssh;
 import 'package:murminal/ui/widgets/ssh_reconnection_banner.dart';
 
@@ -16,6 +17,12 @@ const _surface = Color(0xFF1E293B);
 const _accent = Color(0xFF22D3EE);
 const _textPrimary = Color(0xFFFFFFFF);
 const _textSecondary = Color(0xFF94A3B8);
+
+/// Status badge colors.
+const _statusRunning = Color(0xFF4ADE80);
+const _statusDone = Color(0xFF94A3B8);
+const _statusIdle = Color(0xFFFBBF24);
+const _statusError = Color(0xFFF87171);
 
 /// Default number of scrollback lines for the terminal buffer.
 const _defaultScrollbackLines = 1000;
@@ -65,6 +72,10 @@ class _PtyKeys {
 }
 
 /// Screen displaying an interactive terminal connected to a remote SSH PTY.
+///
+/// Shows a session info header card with engine name, server details, status
+/// badge, and elapsed time above the terminal view. The header matches the
+/// pen wireframe design with a dark card layout.
 ///
 /// Establishes a direct PTY channel over SSH so that keyboard input flows
 /// to the remote shell in real time and stdout is rendered immediately in
@@ -250,8 +261,55 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     }
   }
 
+  /// Format elapsed time since session creation as a human-readable string.
+  String _formatElapsedTime(DateTime createdAt) {
+    final elapsed = DateTime.now().difference(createdAt);
+    if (elapsed.inDays > 0) {
+      return 'Started ${elapsed.inDays}d ago';
+    } else if (elapsed.inHours > 0) {
+      return 'Started ${elapsed.inHours}h ago';
+    } else if (elapsed.inMinutes > 0) {
+      return 'Started ${elapsed.inMinutes} min ago';
+    }
+    return 'Started just now';
+  }
+
+  /// Get the color for a session status badge.
+  Color _statusColor(SessionStatus status) {
+    switch (status) {
+      case SessionStatus.running:
+        return _statusRunning;
+      case SessionStatus.done:
+        return _statusDone;
+      case SessionStatus.idle:
+        return _statusIdle;
+      case SessionStatus.error:
+        return _statusError;
+    }
+  }
+
+  /// Get the icon for an engine type.
+  IconData _engineIcon(String engine) {
+    switch (engine.toLowerCase()) {
+      case 'claude':
+        return Icons.auto_awesome;
+      case 'codex':
+        return Icons.code;
+      case 'gemini':
+        return Icons.diamond;
+      default:
+        return Icons.terminal;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Look up the full session and server data for the header card.
+    final session = ref.watch(sessionProvider(widget.sessionId));
+    final serverRepo = ref.read(serverRepositoryProvider);
+    final serverConfig =
+        session != null ? serverRepo.getById(session.serverId) : null;
+
     return Scaffold(
       backgroundColor: _background,
       appBar: AppBar(
@@ -260,13 +318,12 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
           icon: const Icon(Icons.arrow_back, color: _textPrimary),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(
-          widget.sessionName,
-          style: const TextStyle(
+        title: const Text(
+          'Sessions',
+          style: TextStyle(
             color: _textPrimary,
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            fontFamily: 'JetBrains Mono',
           ),
         ),
         actions: [
@@ -283,21 +340,28 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
             },
             tooltip: _showSpecialKeys ? 'Hide special keys' : 'Show special keys',
           ),
-          // Session status indicator.
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Center(
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: _connecting
-                      ? Colors.orange
-                      : (_errorMessage != null ? Colors.red : _accent),
-                  shape: BoxShape.circle,
+          // Kebab menu.
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: _textSecondary),
+            color: _surface,
+            onSelected: (value) {
+              if (value == 'reconnect') {
+                setState(() {
+                  _connecting = true;
+                  _errorMessage = null;
+                });
+                _initPtyConnection();
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
+                value: 'reconnect',
+                child: Text(
+                  'Reconnect',
+                  style: TextStyle(color: _textPrimary),
                 ),
               ),
-            ),
+            ],
           ),
         ],
         elevation: 0,
@@ -307,6 +371,11 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
           children: [
             // SSH reconnection banner.
             _buildReconnectionBanner(),
+            // Session info header card.
+            if (session != null)
+              _buildSessionInfoCard(session, serverConfig),
+            // "TERMINAL OUTPUT" section label.
+            _buildSectionLabel(),
             // Terminal view or loading/error state.
             Expanded(
               child: LayoutBuilder(
@@ -382,6 +451,139 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
             if (_showSpecialKeys) _buildSpecialKeysBar(),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Build the session info header card showing engine, server, and status.
+  Widget _buildSessionInfoCard(Session session, dynamic serverConfig) {
+    final statusColor = _statusColor(session.status);
+    final statusLabel = session.status.name.toUpperCase();
+    final elapsedText = _formatElapsedTime(session.createdAt);
+
+    // Build server info line: host and optional branch.
+    String serverInfo = '';
+    if (serverConfig != null) {
+      serverInfo = '${serverConfig.host}:${serverConfig.port}';
+    }
+    if (session.worktreeBranch != null) {
+      final branchSuffix = ' \u00B7 ${session.worktreeBranch}';
+      serverInfo = serverInfo.isEmpty
+          ? session.worktreeBranch!
+          : '$serverInfo$branchSuffix';
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: _accent.withValues(alpha: 0.15),
+        ),
+      ),
+      child: Row(
+        children: [
+          // Engine icon.
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _accent.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              _engineIcon(session.engine),
+              color: _accent,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Session details.
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Engine name (bold).
+                Text(
+                  session.engine,
+                  style: const TextStyle(
+                    color: _textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (serverInfo.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    serverInfo,
+                    style: const TextStyle(
+                      color: _textSecondary,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                const SizedBox(height: 4),
+                // Elapsed time.
+                Text(
+                  elapsedText,
+                  style: const TextStyle(
+                    color: _textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Status badge.
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              statusLabel,
+              style: TextStyle(
+                color: statusColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build the "TERMINAL OUTPUT" section label divider.
+  Widget _buildSectionLabel() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+      child: Row(
+        children: [
+          Text(
+            'TERMINAL OUTPUT',
+            style: TextStyle(
+              color: _textSecondary.withValues(alpha: 0.7),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1.2,
+              fontFamily: 'JetBrains Mono',
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              height: 1,
+              color: _textSecondary.withValues(alpha: 0.15),
+            ),
+          ),
+        ],
       ),
     );
   }
