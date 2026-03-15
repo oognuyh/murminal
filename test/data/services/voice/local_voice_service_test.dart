@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:murminal/data/models/tool_definition.dart';
 import 'package:murminal/data/models/voice_event.dart';
 import 'package:murminal/data/services/voice/lm_service.dart';
 import 'package:murminal/data/services/voice/local_voice_service.dart';
