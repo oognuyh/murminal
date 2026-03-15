@@ -28,7 +28,8 @@ class SettingsView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: _kBgColor,
-      body: ListView(
+      body: SafeArea(
+        child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
         children: [
           const Text(
@@ -47,6 +48,7 @@ class SettingsView extends ConsumerWidget {
           const SizedBox(height: 32),
           _buildAboutSection(context, ref),
         ],
+      ),
       ),
     );
   }

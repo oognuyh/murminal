@@ -17,11 +17,34 @@ class _MurminalAppState extends ConsumerState<MurminalApp> {
   void initState() {
     super.initState();
     _loadEngineProfiles();
+    _reconnectSavedServers();
   }
 
   Future<void> _loadEngineProfiles() async {
     final registry = ref.read(engineRegistryProvider);
     await registry.loadBundledProfiles(rootBundle);
+  }
+
+  /// Reconnect to previously connected servers on app startup.
+  ///
+  /// Restores the SSH connection pool state so that sessions can be
+  /// reconciled with live tmux state and the voice FAB finds connected
+  /// servers.
+  Future<void> _reconnectSavedServers() async {
+    final serverRepo = ref.read(serverRepositoryProvider);
+    final pool = ref.read(sshConnectionPoolProvider);
+    final servers = serverRepo.getAll();
+
+    for (final server in servers) {
+      if (server.lastConnectedAt != null) {
+        pool.register(server);
+        try {
+          await pool.getConnection(server.id);
+        } catch (_) {
+          // Connection may fail if server is offline — that's expected.
+        }
+      }
+    }
   }
 
   @override
