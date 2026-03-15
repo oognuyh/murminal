@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/core/router.dart';
 import 'package:murminal/data/models/engine_profile.dart';
+import 'package:murminal/data/repositories/engine_profile_repository.dart';
 
 /// Theme colors matching the app's dark slate design.
 const _kBgColor = Color(0xFF0A0F1C);
@@ -51,6 +52,13 @@ class EngineProfileListScreen extends ConsumerWidget {
                 child: _MenuItemRow(
                   icon: Icons.add,
                   label: 'New Profile',
+                ),
+              ),
+              const PopupMenuItem(
+                value: _MenuAction.createFromTemplate,
+                child: _MenuItemRow(
+                  icon: Icons.content_copy_outlined,
+                  label: 'New from Template',
                 ),
               ),
               const PopupMenuItem(
@@ -110,6 +118,8 @@ class EngineProfileListScreen extends ConsumerWidget {
     switch (action) {
       case _MenuAction.create:
         context.push(AppRoutes.engineProfileEditor);
+      case _MenuAction.createFromTemplate:
+        context.push('${AppRoutes.engineProfileEditor}?fromTemplate=true');
       case _MenuAction.import_:
         _importProfile(context, ref);
       case _MenuAction.reset:
@@ -173,6 +183,15 @@ class EngineProfileListScreen extends ConsumerWidget {
           SnackBar(
             content: Text('Imported "${profile.displayName}"'),
             backgroundColor: _kSurfaceColor,
+          ),
+        );
+      }
+    } on ProfileValidationException catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Validation failed: ${e.errors.join('; ')}'),
+            backgroundColor: Colors.redAccent,
           ),
         );
       }
@@ -399,4 +418,4 @@ class _MenuItemRow extends StatelessWidget {
   }
 }
 
-enum _MenuAction { create, import_, reset }
+enum _MenuAction { create, createFromTemplate, import_, reset }

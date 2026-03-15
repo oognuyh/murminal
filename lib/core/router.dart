@@ -94,7 +94,11 @@ final router = GoRouter(
     GoRoute(
       path: AppRoutes.engineProfileEditor,
       parentNavigatorKey: _rootNavigatorKey,
-      builder: (context, state) => const EngineProfileEditorScreen(),
+      builder: (context, state) {
+        final fromTemplate =
+            state.uri.queryParameters['fromTemplate'] == 'true';
+        return EngineProfileEditorScreen(fromTemplate: fromTemplate);
+      },
     ),
     GoRoute(
       path: AppRoutes.engineProfileDetail,

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -25,26 +27,36 @@ EngineProfile _makeProfile({
 void main() {
   group('EngineProfileListScreen', () {
     late SharedPreferences prefs;
+    late Directory tempDir;
 
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
       prefs = await SharedPreferences.getInstance();
+      tempDir = await Directory.systemTemp.createTemp('list_test_');
     });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    Widget buildWidget(EngineRegistry registry) {
+      return ProviderScope(
+        overrides: [
+          engineRegistryProvider.overrideWithValue(registry),
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          documentsPathProvider.overrideWithValue(tempDir.path),
+        ],
+        child: const MaterialApp(
+          home: EngineProfileListScreen(),
+        ),
+      );
+    }
 
     testWidgets('shows empty state when no profiles exist', (tester) async {
       final registry = EngineRegistry();
-
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            engineRegistryProvider.overrideWithValue(registry),
-            sharedPreferencesProvider.overrideWithValue(prefs),
-          ],
-          child: const MaterialApp(
-            home: EngineProfileListScreen(),
-          ),
-        ),
-      );
+      await tester.pumpWidget(buildWidget(registry));
       await tester.pumpAndSettle();
 
       expect(find.text('No engine profiles'), findsOneWidget);
@@ -54,17 +66,7 @@ void main() {
       final registry = EngineRegistry();
       registry.register(_makeProfile(name: 'claude', displayName: 'Claude Code'));
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            engineRegistryProvider.overrideWithValue(registry),
-            sharedPreferencesProvider.overrideWithValue(prefs),
-          ],
-          child: const MaterialApp(
-            home: EngineProfileListScreen(),
-          ),
-        ),
-      );
+      await tester.pumpWidget(buildWidget(registry));
       await tester.pumpAndSettle();
 
       expect(find.text('Claude Code'), findsOneWidget);
@@ -76,17 +78,7 @@ void main() {
       registry.register(_makeProfile(name: 'alpha', displayName: 'Alpha'));
       registry.register(_makeProfile(name: 'beta', displayName: 'Beta'));
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            engineRegistryProvider.overrideWithValue(registry),
-            sharedPreferencesProvider.overrideWithValue(prefs),
-          ],
-          child: const MaterialApp(
-            home: EngineProfileListScreen(),
-          ),
-        ),
-      );
+      await tester.pumpWidget(buildWidget(registry));
       await tester.pumpAndSettle();
 
       expect(find.text('Alpha'), findsOneWidget);
@@ -96,17 +88,7 @@ void main() {
     testWidgets('shows app bar with title', (tester) async {
       final registry = EngineRegistry();
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            engineRegistryProvider.overrideWithValue(registry),
-            sharedPreferencesProvider.overrideWithValue(prefs),
-          ],
-          child: const MaterialApp(
-            home: EngineProfileListScreen(),
-          ),
-        ),
-      );
+      await tester.pumpWidget(buildWidget(registry));
       await tester.pumpAndSettle();
 
       expect(find.text('Engine Profiles'), findsOneWidget);
@@ -115,17 +97,7 @@ void main() {
     testWidgets('has floating action button for adding profiles', (tester) async {
       final registry = EngineRegistry();
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            engineRegistryProvider.overrideWithValue(registry),
-            sharedPreferencesProvider.overrideWithValue(prefs),
-          ],
-          child: const MaterialApp(
-            home: EngineProfileListScreen(),
-          ),
-        ),
-      );
+      await tester.pumpWidget(buildWidget(registry));
       await tester.pumpAndSettle();
 
       expect(find.byType(FloatingActionButton), findsOneWidget);
@@ -135,17 +107,7 @@ void main() {
       final registry = EngineRegistry();
       registry.register(_makeProfile());
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            engineRegistryProvider.overrideWithValue(registry),
-            sharedPreferencesProvider.overrideWithValue(prefs),
-          ],
-          child: const MaterialApp(
-            home: EngineProfileListScreen(),
-          ),
-        ),
-      );
+      await tester.pumpWidget(buildWidget(registry));
       await tester.pumpAndSettle();
 
       // Type and input mode shown as subtitle.

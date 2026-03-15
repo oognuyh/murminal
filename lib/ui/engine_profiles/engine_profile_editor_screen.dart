@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/models/engine_profile.dart';
+import 'package:murminal/data/repositories/engine_profile_repository.dart';
+import 'package:murminal/domain/validators/engine_profile_validator.dart';
 
 /// Theme colors matching the app's dark slate design.
 const _kBgColor = Color(0xFF0A0F1C);
@@ -19,12 +21,20 @@ const _kErrorRed = Color(0xFFEF4444);
 ///
 /// When [profileName] is provided, loads the existing profile for
 /// viewing (bundled) or editing (user-created). When null, creates
-/// a new profile.
+/// a new profile. When [fromTemplate] is true, pre-populates the
+/// form with values from the bundled custom-template.json.
 class EngineProfileEditorScreen extends ConsumerStatefulWidget {
   /// Name of the profile to edit, or null for new profile creation.
   final String? profileName;
 
-  const EngineProfileEditorScreen({super.key, this.profileName});
+  /// Whether to pre-populate from the bundled template.
+  final bool fromTemplate;
+
+  const EngineProfileEditorScreen({
+    super.key,
+    this.profileName,
+    this.fromTemplate = false,
+  });
 
   @override
   ConsumerState<EngineProfileEditorScreen> createState() =>
@@ -78,6 +88,11 @@ class _EngineProfileEditorScreenState
       _isNew = true;
       _isBundled = false;
       _isReadOnly = false;
+
+      // Load template if requested.
+      if (widget.fromTemplate) {
+        _loadTemplate();
+      }
       return;
     }
 
@@ -91,6 +106,25 @@ class _EngineProfileEditorScreenState
     final profile = profiles.where((p) => p.name == name).firstOrNull;
     if (profile == null) return;
 
+    _populateFromProfile(profile);
+    setState(() {});
+  }
+
+  /// Loads the bundled custom template and pre-populates the form.
+  Future<void> _loadTemplate() async {
+    final registry = ref.read(engineRegistryProvider);
+    final template = await registry.loadTemplate(DefaultAssetBundle.of(context));
+    if (template != null && mounted) {
+      _populateFromProfile(template);
+      // Clear name fields so user must provide their own.
+      _nameController.text = '';
+      _displayNameController.text = '';
+      setState(() {});
+    }
+  }
+
+  /// Populates all form controllers from the given [profile].
+  void _populateFromProfile(EngineProfile profile) {
     _nameController.text = profile.name;
     _displayNameController.text = profile.displayName;
     _typeController.text = profile.type;
@@ -118,8 +152,6 @@ class _EngineProfileEditorScreenState
       _templateControllers[entry.key] =
           TextEditingController(text: entry.value);
     }
-
-    setState(() {});
   }
 
   @override
@@ -204,6 +236,15 @@ class _EngineProfileEditorScreenState
 
       if (mounted) {
         Navigator.of(context).pop(true);
+      }
+    } on ProfileValidationException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.errors.join('; ')),
+            backgroundColor: _kErrorRed,
+          ),
+        );
       }
     } on Exception catch (e) {
       if (mounted) {
@@ -396,7 +437,7 @@ class _EngineProfileEditorScreenState
                 label: 'Name',
                 hint: 'my-engine',
                 readOnly: _isReadOnly || (!_isNew),
-                validator: _requiredValidator('Name is required'),
+                validator: EngineProfileValidator.validateName,
               ),
               const SizedBox(height: 12),
               _buildTextField(
@@ -404,7 +445,7 @@ class _EngineProfileEditorScreenState
                 label: 'Display Name',
                 hint: 'My Engine',
                 readOnly: _isReadOnly,
-                validator: _requiredValidator('Display name is required'),
+                validator: EngineProfileValidator.validateDisplayName,
               ),
               const SizedBox(height: 12),
               _buildTextField(
@@ -412,7 +453,7 @@ class _EngineProfileEditorScreenState
                 label: 'Type',
                 hint: 'chat-tui',
                 readOnly: _isReadOnly,
-                validator: _requiredValidator('Type is required'),
+                validator: EngineProfileValidator.validateType,
               ),
               const SizedBox(height: 12),
               _buildTextField(
@@ -420,7 +461,7 @@ class _EngineProfileEditorScreenState
                 label: 'Input Mode',
                 hint: 'natural_language',
                 readOnly: _isReadOnly,
-                validator: _requiredValidator('Input mode is required'),
+                validator: EngineProfileValidator.validateInputMode,
               ),
               const SizedBox(height: 24),
               _buildSectionHeader('LAUNCH'),
@@ -762,12 +803,6 @@ class _EngineProfileEditorScreenState
     );
   }
 
-  FormFieldValidator<String> _requiredValidator(String message) {
-    return (value) {
-      if (value == null || value.trim().isEmpty) return message;
-      return null;
-    };
-  }
 }
 
 // -- Helper widgets -----------------------------------------------------------

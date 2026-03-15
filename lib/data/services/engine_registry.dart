@@ -78,6 +78,22 @@ class EngineRegistry {
     return _profiles[name];
   }
 
+  /// Loads the custom template profile from bundled assets.
+  ///
+  /// Returns the template [EngineProfile] that users can use as a
+  /// starting point for creating custom profiles. Returns `null` if
+  /// the template asset is missing or invalid.
+  Future<EngineProfile?> loadTemplate(AssetBundle bundle) async {
+    try {
+      final jsonString =
+          await bundle.loadString('assets/profiles/custom-template.json');
+      final json = jsonDecode(jsonString) as Map<String, dynamic>;
+      return EngineProfile.fromJson(json);
+    } on Exception {
+      return null;
+    }
+  }
+
   /// Validates that [json] contains all required top-level fields.
   ///
   /// Throws [FormatException] listing missing fields when validation fails.
