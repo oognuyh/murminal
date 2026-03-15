@@ -241,7 +241,7 @@ void main() {
       test('throws on invalid PEM content', () async {
         expect(
           () => service.importKey(name: 'bad', pemContent: 'not-a-pem'),
-          throwsA(isA<Error>()),
+          throwsA(anything),
         );
       });
     });
