@@ -302,7 +302,12 @@ class VoiceSupervisor {
         _voiceEventSub = _voiceService.events.listen(_handleVoiceEvent);
 
         // Pipe mic audio to the Realtime API.
-        _micSub = micStream.listen(_voiceService.sendAudio);
+        // Drop audio while model is speaking to prevent echo feedback.
+        _micSub = micStream.listen((data) {
+          if (_currentState != VoiceSupervisorState.speaking) {
+            _voiceService.sendAudio(data);
+          }
+        });
       }
 
       // 7. Subscribe to output monitor for proactive reporting.
@@ -545,7 +550,11 @@ class VoiceSupervisor {
       } else {
         // 1. Restart the microphone for realtime pipeline.
         final micStream = await _mic.startRecording();
-        _micSub = micStream.listen(_voiceService.sendAudio);
+        _micSub = micStream.listen((data) {
+          if (_currentState != VoiceSupervisorState.speaking) {
+            _voiceService.sendAudio(data);
+          }
+        });
       }
 
       // 2. Re-subscribe to output monitor.
