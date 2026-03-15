@@ -181,7 +181,7 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
 
   /// Navigate to new session creation (placeholder).
   void _onAddSession() {
-    // Placeholder navigation for new session creation screen.
+    context.push('/sessions/new');
   }
 
   @override

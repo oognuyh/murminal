@@ -5,6 +5,7 @@ import 'package:murminal/data/models/server_config.dart';
 import 'package:murminal/data/repositories/server_repository.dart';
 import 'package:murminal/ui/home/home_view.dart';
 import 'package:murminal/ui/screens/add_server_screen.dart';
+import 'package:murminal/ui/screens/new_session_screen.dart';
 import 'package:murminal/ui/screens/session_detail_screen.dart';
 import 'package:murminal/ui/servers/server_list_view.dart';
 import 'package:murminal/ui/sessions/session_list_view.dart';
@@ -18,6 +19,7 @@ abstract final class AppRoutes {
   static const sessions = '/sessions';
   static const settings = '/settings';
   static const sessionDetail = '/sessions/:sessionId';
+  static const newSession = '/sessions/new';
   static const addServer = '/servers/add';
 }
 
@@ -50,6 +52,11 @@ final router = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: AppRoutes.home,
   routes: [
+    GoRoute(
+      path: AppRoutes.newSession,
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const NewSessionScreen(),
+    ),
     GoRoute(
       path: AppRoutes.sessionDetail,
       parentNavigatorKey: _rootNavigatorKey,
