@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:murminal/data/models/server_config.dart';
+import 'package:murminal/data/models/server_preview.dart';
 import 'package:murminal/data/services/ssh_service.dart';
 import 'package:murminal/data/services/tmux_install_service.dart';
 
@@ -28,6 +29,11 @@ class SshConnectionPool {
   ///
   /// Populated on first connection and reused to avoid re-checking.
   final Map<String, TmuxCheckResult> _tmuxStatus = {};
+
+  /// Cached server preview data per server ID.
+  ///
+  /// Populated on connection and refreshed on reconnect.
+  final Map<String, ServerPreview> _previews = {};
 
   final _stateController =
       StreamController<Map<String, ConnectionState>>.broadcast();
@@ -96,6 +102,21 @@ class SshConnectionPool {
     _tmuxStatus.remove(serverId);
   }
 
+  /// Get the cached server preview for [serverId].
+  ///
+  /// Returns null if no preview has been fetched yet.
+  ServerPreview? getPreview(String serverId) => _previews[serverId];
+
+  /// Store the server preview for [serverId].
+  void setPreview(String serverId, ServerPreview preview) {
+    _previews[serverId] = preview;
+  }
+
+  /// Clear the cached server preview for [serverId].
+  void clearPreview(String serverId) {
+    _previews.remove(serverId);
+  }
+
   /// Get or create a connection for [serverId].
   ///
   /// If the server has a registered config but is not yet connected,
@@ -150,6 +171,7 @@ class SshConnectionPool {
     _reconnectSubs[serverId]?.cancel();
     _reconnectSubs.remove(serverId);
     _tmuxStatus.remove(serverId);
+    _previews.remove(serverId);
 
     if (service != null) {
       await service.disconnect();
@@ -195,6 +217,7 @@ class SshConnectionPool {
     _configs.clear();
     _connectionCounts.clear();
     _tmuxStatus.clear();
+    _previews.clear();
     _stateController.close();
     _reconnectionController.close();
   }

@@ -246,7 +246,8 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
 
   /// Individual server card with status indicator dot and subtitle info.
   ///
-  /// Connected servers show a green dot, IP address, and session count.
+  /// Connected servers show a green dot, IP address, session count,
+  /// and a preview row with OS, uptime, and memory when available.
   /// Saved/offline servers show a grey dot, hostname, and "offline" label.
   Widget _buildServerCard(
     ServerConfig server,
@@ -304,6 +305,8 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
                         fontFamily: 'JetBrains Mono',
                       ),
                     ),
+                    if (isConnected)
+                      _ServerPreviewRow(serverId: server.id),
                   ],
                 ),
               ),
@@ -337,6 +340,47 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
           height: 1.6,
         ),
       ),
+    );
+  }
+}
+
+/// Displays a compact preview row for a connected server.
+///
+/// Shows OS name, uptime, and memory usage when available.
+/// Renders nothing while loading or if no preview data exists.
+class _ServerPreviewRow extends ConsumerWidget {
+  final String serverId;
+
+  const _ServerPreviewRow({required this.serverId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final previewAsync = ref.watch(serverPreviewProvider(serverId));
+
+    return previewAsync.when(
+      data: (preview) {
+        if (preview == null || !preview.hasData) {
+          return const SizedBox.shrink();
+        }
+        final summaryText = preview.summary;
+        if (summaryText.isEmpty) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+            summaryText,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _accent,
+              fontSize: 11,
+              fontFamily: 'JetBrains Mono',
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 }

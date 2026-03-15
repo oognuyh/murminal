@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:murminal/data/models/audio_session_state.dart';
 import 'package:murminal/data/models/engine_profile.dart';
 import 'package:murminal/data/models/server_config.dart';
+import 'package:murminal/data/models/server_preview.dart';
 import 'package:murminal/data/models/session.dart';
 import 'package:murminal/data/models/voice_provider.dart';
 import 'package:murminal/data/repositories/engine_profile_repository.dart';
@@ -12,6 +13,7 @@ import 'package:murminal/data/repositories/server_repository.dart';
 import 'package:murminal/data/repositories/session_repository.dart';
 import 'package:murminal/data/services/audio_session_service.dart';
 import 'package:murminal/data/services/now_playing_service.dart';
+import 'package:murminal/data/services/server_preview_service.dart';
 import 'package:murminal/data/services/session_service.dart';
 import 'package:murminal/data/services/mic_service.dart';
 import 'package:murminal/data/services/output_monitor.dart';
@@ -156,6 +158,33 @@ final sshReconnectionEventsProvider =
     StreamProvider<SshReconnectionEvent>((ref) {
   final pool = ref.watch(sshConnectionPoolProvider);
   return pool.reconnectionEvents;
+});
+
+/// Fetches server preview (MOTD, OS, uptime, memory, disk) for a server.
+///
+/// Returns cached preview from the connection pool if available.
+/// Otherwise, fetches fresh data over SSH and caches the result.
+/// Only works for connected servers; returns null for disconnected ones.
+final serverPreviewProvider =
+    FutureProvider.family<ServerPreview?, String>((ref, serverId) async {
+  final pool = ref.watch(sshConnectionPoolProvider);
+
+  // Return cached preview if available.
+  final cached = pool.getPreview(serverId);
+  if (cached != null) return cached;
+
+  // Only fetch for connected servers.
+  if (!pool.isConnected(serverId)) return null;
+
+  try {
+    final ssh = await pool.getConnection(serverId);
+    final service = ServerPreviewService(ssh);
+    final preview = await service.fetchPreview();
+    pool.setPreview(serverId, preview);
+    return preview;
+  } on Exception {
+    return null;
+  }
 });
 
 /// SSH service provider. One instance per server connection.
