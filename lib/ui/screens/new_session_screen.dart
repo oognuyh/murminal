@@ -121,7 +121,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
                 hint: 'Select a server',
                 value: _selectedServer,
                 items: servers,
-                itemLabel: (s) => '${s.label} (${s.username}@${s.host})',
+                itemLabel: (s) => s.label,
                 onChanged: (value) => setState(() => _selectedServer = value),
                 validator: (value) =>
                     value == null ? 'Server is required' : null,
