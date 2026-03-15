@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/models/session.dart';
@@ -106,7 +107,7 @@ class _VoiceSessionScreenState extends ConsumerState<VoiceSessionScreen>
     final supervisor = ref.read(voiceSupervisorProvider(widget.serverId));
     await supervisor.stop();
     if (mounted) {
-      Navigator.of(context).pop();
+      context.go('/');
     }
   }
 
