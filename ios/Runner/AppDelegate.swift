@@ -4,6 +4,8 @@ import UIKit
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   private var nowPlayingPlugin: NowPlayingPlugin?
+  private var speechRecognitionPlugin: SpeechRecognitionPlugin?
+  private var speechSynthesisPlugin: SpeechSynthesisPlugin?
 
   override func application(
     _ application: UIApplication,
@@ -13,6 +15,8 @@ import UIKit
 
     if let controller = window?.rootViewController as? FlutterViewController {
       nowPlayingPlugin = NowPlayingPlugin(messenger: controller.binaryMessenger)
+      speechRecognitionPlugin = SpeechRecognitionPlugin(messenger: controller.binaryMessenger)
+      speechSynthesisPlugin = SpeechSynthesisPlugin(messenger: controller.binaryMessenger)
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
