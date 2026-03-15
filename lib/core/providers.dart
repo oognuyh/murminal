@@ -9,6 +9,7 @@ import 'package:murminal/data/models/voice_provider.dart';
 import 'package:murminal/data/repositories/server_repository.dart';
 import 'package:murminal/data/repositories/session_repository.dart';
 import 'package:murminal/data/services/audio_session_service.dart';
+import 'package:murminal/data/services/now_playing_service.dart';
 import 'package:murminal/data/services/session_service.dart';
 import 'package:murminal/data/services/mic_service.dart';
 import 'package:murminal/data/services/output_monitor.dart';
@@ -66,6 +67,17 @@ final audioSessionServiceProvider = Provider<AudioSessionService>((ref) {
 final audioSessionStateProvider = StreamProvider<AudioSessionState>((ref) {
   final service = ref.watch(audioSessionServiceProvider);
   return service.stateStream;
+});
+
+/// Singleton [NowPlayingService] for lock screen media controls.
+///
+/// Manages MPNowPlayingInfoCenter metadata and MPRemoteCommandCenter
+/// play/stop targets on iOS. Displays "Murminal" with the current
+/// voice session status on the lock screen and Control Center.
+final nowPlayingServiceProvider = Provider<NowPlayingService>((ref) {
+  final service = NowPlayingService();
+  ref.onDispose(service.dispose);
+  return service;
 });
 
 /// SharedPreferences instance, must be overridden at app startup.
