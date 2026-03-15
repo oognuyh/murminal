@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -36,6 +38,7 @@ Future<void> _pumpEditor(
   WidgetTester tester, {
   required EngineRegistry registry,
   required SharedPreferences prefs,
+  required String documentsPath,
   String? profileName,
 }) async {
   await tester.pumpWidget(
@@ -43,6 +46,7 @@ Future<void> _pumpEditor(
       overrides: [
         engineRegistryProvider.overrideWithValue(registry),
         sharedPreferencesProvider.overrideWithValue(prefs),
+        documentsPathProvider.overrideWithValue(documentsPath),
       ],
       child: MaterialApp(
         home: EngineProfileEditorScreen(profileName: profileName),
@@ -57,17 +61,26 @@ Future<void> _pumpEditor(
 void main() {
   group('EngineProfileEditorScreen', () {
     late SharedPreferences prefs;
+    late Directory tempDir;
 
     setUp(() async {
       SharedPreferences.setMockInitialValues({});
       prefs = await SharedPreferences.getInstance();
+      tempDir = await Directory.systemTemp.createTemp('editor_test_');
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
     });
 
     testWidgets('shows New Profile in app bar when profileName is null',
         (tester) async {
       final registry = EngineRegistry();
 
-      await _pumpEditor(tester, registry: registry, prefs: prefs);
+      await _pumpEditor(tester,
+          registry: registry, prefs: prefs, documentsPath: tempDir.path);
 
       expect(find.text('New Profile'), findsOneWidget);
     });
@@ -75,7 +88,8 @@ void main() {
     testWidgets('shows GENERAL section header', (tester) async {
       final registry = EngineRegistry();
 
-      await _pumpEditor(tester, registry: registry, prefs: prefs);
+      await _pumpEditor(tester,
+          registry: registry, prefs: prefs, documentsPath: tempDir.path);
 
       expect(find.text('GENERAL'), findsOneWidget);
     });
@@ -83,7 +97,8 @@ void main() {
     testWidgets('shows LAUNCH section header', (tester) async {
       final registry = EngineRegistry();
 
-      await _pumpEditor(tester, registry: registry, prefs: prefs);
+      await _pumpEditor(tester,
+          registry: registry, prefs: prefs, documentsPath: tempDir.path);
 
       expect(find.text('LAUNCH'), findsOneWidget);
     });
@@ -96,6 +111,7 @@ void main() {
         tester,
         registry: registry,
         prefs: prefs,
+        documentsPath: tempDir.path,
         profileName: 'bundled',
       );
 
@@ -110,6 +126,7 @@ void main() {
         tester,
         registry: registry,
         prefs: prefs,
+        documentsPath: tempDir.path,
         profileName: 'edit-me',
       );
 
@@ -121,7 +138,8 @@ void main() {
     testWidgets('shows create button when scrolled to bottom', (tester) async {
       final registry = EngineRegistry();
 
-      await _pumpEditor(tester, registry: registry, prefs: prefs);
+      await _pumpEditor(tester,
+          registry: registry, prefs: prefs, documentsPath: tempDir.path);
 
       // Scroll to the bottom of the list view.
       final scrollable = find.byType(Scrollable).first;
@@ -142,6 +160,7 @@ void main() {
         tester,
         registry: registry,
         prefs: prefs,
+        documentsPath: tempDir.path,
         profileName: 'bundled',
       );
 

@@ -291,11 +291,21 @@ final voiceSupervisorStateProvider =
   return supervisor.state;
 });
 
+/// App documents directory path, must be overridden at app startup.
+final documentsPathProvider = Provider<String>((ref) {
+  throw UnimplementedError(
+    'documentsPathProvider must be overridden with a real path',
+  );
+});
+
 /// Repository for user-created engine profiles.
+///
+/// Stores profiles as individual JSON files in the app documents directory.
 final engineProfileRepositoryProvider =
     Provider<EngineProfileRepository>((ref) {
   final prefs = ref.watch(sharedPreferencesProvider);
-  return EngineProfileRepository(prefs);
+  final documentsPath = ref.watch(documentsPathProvider);
+  return EngineProfileRepository(prefs: prefs, documentsPath: documentsPath);
 });
 
 /// All engine profiles: bundled + user-created.
