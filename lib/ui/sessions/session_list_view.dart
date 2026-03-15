@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/models/session.dart';
+import 'package:murminal/ui/widgets/session_action_sheet.dart';
 
 /// Theme colors matching the app's dark slate design.
 const _background = Color(0xFF0A0F1C);
@@ -11,8 +12,6 @@ const _surface = Color(0xFF1E293B);
 const _accent = Color(0xFF22D3EE);
 const _textPrimary = Color(0xFFFFFFFF);
 const _textMuted = Color(0xFF64748B);
-const _green = Color(0xFF4ADE80);
-const _red = Color(0xFFF87171);
 
 /// Filter tabs for the session list.
 enum _SessionFilter {
@@ -27,9 +26,8 @@ enum _SessionFilter {
 
 /// Session list screen displaying all sessions across all servers.
 ///
-/// Provides filter tabs (All, Running, Done, Idle) with underline indicator,
-/// session cards with status-colored left border, and actions for creating
-/// and managing sessions. Matches the pen wireframe design.
+/// Provides filter tabs (All, Running, Done, Idle), session cards with
+/// status indicators, and actions for creating and managing sessions.
 class SessionListView extends ConsumerStatefulWidget {
   const SessionListView({super.key});
 
@@ -63,52 +61,23 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
     return serverId.length > 12 ? '${serverId.substring(0, 12)}...' : serverId;
   }
 
-  /// Left border color for the given session status.
-  Color _statusBorderColor(SessionStatus status) {
+  /// Status icon character for the given session status.
+  String _statusIcon(SessionStatus status) {
     return switch (status) {
-      SessionStatus.running => _accent,
-      SessionStatus.done => _green,
-      SessionStatus.idle => _textMuted.withValues(alpha: 0.4),
-      SessionStatus.error => _red,
+      SessionStatus.running => '◐',
+      SessionStatus.done => '✓',
+      SessionStatus.idle => '○',
+      SessionStatus.error => '✗',
     };
   }
 
-  /// Status indicator widget for the given session status.
-  Widget _statusIndicator(SessionStatus status) {
+  /// Status color for the given session status.
+  Color _statusColor(SessionStatus status) {
     return switch (status) {
-      SessionStatus.running => Container(
-          width: 8,
-          height: 8,
-          decoration: const BoxDecoration(
-            color: _accent,
-            shape: BoxShape.circle,
-          ),
-        ),
-      SessionStatus.done => const Text(
-          '\u2713',
-          style: TextStyle(
-            color: _green,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      SessionStatus.idle => Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(
-            color: Colors.transparent,
-            shape: BoxShape.circle,
-            border: Border.all(color: _textMuted, width: 1.5),
-          ),
-        ),
-      SessionStatus.error => const Text(
-          '\u2717',
-          style: TextStyle(
-            color: _red,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+      SessionStatus.running => _accent,
+      SessionStatus.done => const Color(0xFF4ADE80),
+      SessionStatus.idle => _textMuted,
+      SessionStatus.error => const Color(0xFFF87171),
     };
   }
 
@@ -130,88 +99,51 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
 
   /// Show actions bottom sheet on long press.
   void _onSessionLongPress(Session session) {
-    showModalBottomSheet<void>(
+    SessionActionSheet.show(
       context: context,
-      backgroundColor: _surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 32,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: _textMuted.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              _buildActionTile(
-                icon: Icons.info_outline,
-                label: 'View Details',
-                onTap: () {
-                  Navigator.pop(context);
-                  _onSessionTap(session);
-                },
-              ),
-              if (session.status == SessionStatus.running)
-                _buildActionTile(
-                  icon: Icons.stop_circle_outlined,
-                  label: 'Terminate',
-                  color: _red,
-                  onTap: () async {
-                    Navigator.pop(context);
-                    final service = ref.read(sessionServiceProvider);
-                    await service.terminateSession(session.id);
-                    ref.invalidate(allSessionsProvider);
-                  },
-                ),
-              _buildActionTile(
-                icon: Icons.delete_outline,
-                label: 'Delete',
-                color: _red,
-                onTap: () async {
-                  Navigator.pop(context);
-                  final service = ref.read(sessionServiceProvider);
-                  await service.deleteSession(session.id);
-                  ref.invalidate(allSessionsProvider);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+      session: session,
+      serverLabel: _serverLabel(session.serverId),
+      onAction: (action) => _handleSessionAction(session, action),
     );
   }
 
-  /// Build a single action tile for the bottom sheet.
-  Widget _buildActionTile({
-    required IconData icon,
-    required String label,
-    Color color = _textPrimary,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: color, size: 22),
-      title: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 14,
-          fontFamily: 'JetBrains Mono',
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      onTap: onTap,
-    );
+  /// Handle a selected action from the session action sheet.
+  Future<void> _handleSessionAction(
+    Session session,
+    SessionAction action,
+  ) async {
+    final service = ref.read(sessionServiceProvider);
+
+    switch (action) {
+      case SessionAction.viewTerminal:
+        _onSessionTap(session);
+      case SessionAction.voiceControl:
+        // Navigate to terminal with voice control activated.
+        context.push(
+          '/sessions/${session.id}'
+          '?name=${Uri.encodeComponent(session.name)}'
+          '&voice=true',
+        );
+      case SessionAction.restart:
+        await service.terminateSession(session.id);
+        await service.createSession(
+          serverId: session.serverId,
+          engine: session.engine,
+          name: session.name,
+          worktreePath: session.worktreePath,
+          worktreeBranch: session.worktreeBranch,
+        );
+        ref.invalidate(allSessionsProvider);
+      case SessionAction.terminate:
+        await service.terminateSession(session.id);
+        ref.invalidate(allSessionsProvider);
+      case SessionAction.delete:
+        await service.deleteSession(session.id);
+        ref.invalidate(allSessionsProvider);
+    }
   }
 
-  /// Navigate to new session creation.
+  /// Navigate to new session creation (placeholder).
   void _onAddSession() {
     context.push('/sessions/new');
   }
@@ -230,9 +162,9 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
             children: [
               const SizedBox(height: 24),
               _buildHeader(),
-              const SizedBox(height: 24),
-              _buildFilterTabs(),
               const SizedBox(height: 20),
+              _buildFilterTabs(),
+              const SizedBox(height: 24),
               Expanded(
                 child: sessionsAsync.when(
                   data: (sessions) {
@@ -270,7 +202,7 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
     );
   }
 
-  /// Title row with SESSIONS heading and cyan circular add button.
+  /// Title row with SESSIONS heading and add button.
   Widget _buildHeader() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -288,16 +220,16 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
         GestureDetector(
           onTap: _onAddSession,
           child: Container(
-            width: 36,
-            height: 36,
-            decoration: const BoxDecoration(
-              color: _accent,
-              shape: BoxShape.circle,
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(
               Icons.add,
-              color: _background,
-              size: 20,
+              color: _accent,
+              size: 22,
             ),
           ),
         ),
@@ -305,49 +237,49 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
     );
   }
 
-  /// Underline-style filter tabs for session status filtering.
+  /// Segmented filter tabs for session status filtering.
   Widget _buildFilterTabs() {
-    return Row(
-      children: _SessionFilter.values.map((filter) {
-        final isActive = _activeFilter == filter;
-        return Padding(
-          padding: const EdgeInsets.only(right: 24),
-          child: GestureDetector(
-            onTap: () => setState(() => _activeFilter = filter),
-            behavior: HitTestBehavior.opaque,
-            child: Column(
-              children: [
-                Text(
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: _SessionFilter.values.map((filter) {
+          final isActive = _activeFilter == filter;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _activeFilter = filter),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: isActive ? _accent : Colors.transparent,
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                alignment: Alignment.center,
+                child: Text(
                   filter.label,
                   style: TextStyle(
-                    color: isActive ? _textPrimary : _textMuted,
-                    fontSize: 14,
-                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                    color: isActive ? const Color(0xFF0A0F1C) : _textMuted,
+                    fontSize: 12,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                     fontFamily: 'JetBrains Mono',
                   ),
                 ),
-                const SizedBox(height: 8),
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  height: 2,
-                  width: isActive ? 24 : 0,
-                  decoration: BoxDecoration(
-                    color: isActive ? _accent : Colors.transparent,
-                    borderRadius: BorderRadius.circular(1),
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        );
-      }).toList(),
+          );
+        }).toList(),
+      ),
     );
   }
 
-  /// Session card with status-colored left border, status indicator,
-  /// engine name (bold), server name (right-aligned), and branch/task row.
+  /// Individual session card with status icon, engine, server, and activity.
   Widget _buildSessionCard(Session session) {
-    final borderColor = _statusBorderColor(session.status);
+    final icon = _statusIcon(session.status);
+    final color = _statusColor(session.status);
     final server = _serverLabel(session.serverId);
     final activity = _formatActivity(session.createdAt);
 
@@ -357,85 +289,80 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
         onTap: () => _onSessionTap(session),
         onLongPress: () => _onSessionLongPress(session),
         child: Container(
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: _surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border(
-              left: BorderSide(color: borderColor, width: 3),
-            ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              // Top row: status dot + engine name (left), server name (right).
-              Row(
-                children: [
-                  _statusIndicator(session.status),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
+              // Status icon.
+              SizedBox(
+                width: 24,
+                child: Text(
+                  icon,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Session info.
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
                       session.engine,
                       style: const TextStyle(
                         color: _textPrimary,
                         fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w600,
                         fontFamily: 'JetBrains Mono',
                       ),
                     ),
-                  ),
-                  Text(
-                    server,
-                    style: const TextStyle(
-                      color: _textMuted,
-                      fontSize: 12,
-                      fontFamily: 'JetBrains Mono',
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              // Bottom row: branch and/or activity info.
-              Padding(
-                padding: const EdgeInsets.only(left: 18),
-                child: Row(
-                  children: [
-                    if (session.worktreeBranch != null) ...[
-                      Icon(
-                        Icons.account_tree_outlined,
-                        size: 12,
-                        color: _accent.withValues(alpha: 0.7),
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          session.worktreeBranch!,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: _accent.withValues(alpha: 0.7),
-                            fontSize: 11,
-                            fontFamily: 'JetBrains Mono',
-                          ),
-                        ),
-                      ),
-                      Text(
-                        '  \u00b7  ',
-                        style: TextStyle(
-                          color: _textMuted.withValues(alpha: 0.6),
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
+                    const SizedBox(height: 4),
                     Text(
-                      activity,
+                      '$server  ·  $activity',
                       style: const TextStyle(
                         color: _textMuted,
-                        fontSize: 11,
+                        fontSize: 12,
                         fontFamily: 'JetBrains Mono',
                       ),
                     ),
+                    if (session.worktreeBranch != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.account_tree_outlined,
+                            size: 12,
+                            color: _accent.withValues(alpha: 0.7),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              session.worktreeBranch!,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _accent.withValues(alpha: 0.7),
+                                fontSize: 11,
+                                fontFamily: 'JetBrains Mono',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
+              ),
+              // Chevron right.
+              const Icon(
+                Icons.chevron_right,
+                color: _textMuted,
+                size: 20,
               ),
             ],
           ),
