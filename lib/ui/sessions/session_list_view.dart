@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/models/session.dart';
+import 'package:murminal/ui/widgets/session_action_sheet.dart';
 
 /// Theme colors matching the app's dark slate design.
 const _background = Color(0xFF0A0F1C);
@@ -98,85 +99,48 @@ class _SessionListViewState extends ConsumerState<SessionListView> {
 
   /// Show actions bottom sheet on long press.
   void _onSessionLongPress(Session session) {
-    showModalBottomSheet<void>(
+    SessionActionSheet.show(
       context: context,
-      backgroundColor: _surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 32,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: _textMuted.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              _buildActionTile(
-                icon: Icons.info_outline,
-                label: 'View Details',
-                onTap: () {
-                  Navigator.pop(context);
-                  _onSessionTap(session);
-                },
-              ),
-              if (session.status == SessionStatus.running)
-                _buildActionTile(
-                  icon: Icons.stop_circle_outlined,
-                  label: 'Terminate',
-                  color: const Color(0xFFF87171),
-                  onTap: () async {
-                    Navigator.pop(context);
-                    final service = ref.read(sessionServiceProvider);
-                    await service.terminateSession(session.id);
-                    ref.invalidate(allSessionsProvider);
-                  },
-                ),
-              _buildActionTile(
-                icon: Icons.delete_outline,
-                label: 'Delete',
-                color: const Color(0xFFF87171),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final service = ref.read(sessionServiceProvider);
-                  await service.deleteSession(session.id);
-                  ref.invalidate(allSessionsProvider);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
+      session: session,
+      serverLabel: _serverLabel(session.serverId),
+      onAction: (action) => _handleSessionAction(session, action),
     );
   }
 
-  /// Build a single action tile for the bottom sheet.
-  Widget _buildActionTile({
-    required IconData icon,
-    required String label,
-    Color color = _textPrimary,
-    required VoidCallback onTap,
-  }) {
-    return ListTile(
-      leading: Icon(icon, color: color, size: 22),
-      title: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 14,
-          fontFamily: 'JetBrains Mono',
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-      onTap: onTap,
-    );
+  /// Handle a selected action from the session action sheet.
+  Future<void> _handleSessionAction(
+    Session session,
+    SessionAction action,
+  ) async {
+    final service = ref.read(sessionServiceProvider);
+
+    switch (action) {
+      case SessionAction.viewTerminal:
+        _onSessionTap(session);
+      case SessionAction.voiceControl:
+        // Navigate to terminal with voice control activated.
+        context.push(
+          '/sessions/${session.id}'
+          '?name=${Uri.encodeComponent(session.name)}'
+          '&voice=true',
+        );
+      case SessionAction.restart:
+        await service.terminateSession(session.id);
+        await service.createSession(
+          serverId: session.serverId,
+          engine: session.engine,
+          name: session.name,
+          worktreePath: session.worktreePath,
+          worktreeBranch: session.worktreeBranch,
+        );
+        ref.invalidate(allSessionsProvider);
+      case SessionAction.terminate:
+        await service.terminateSession(session.id);
+        ref.invalidate(allSessionsProvider);
+      case SessionAction.delete:
+        await service.deleteSession(session.id);
+        ref.invalidate(allSessionsProvider);
+    }
   }
 
   /// Navigate to new session creation (placeholder).
