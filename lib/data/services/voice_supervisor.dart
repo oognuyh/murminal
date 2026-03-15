@@ -379,8 +379,10 @@ class VoiceSupervisor {
       case AudioDelta():
         // Update state to indicate the model is speaking.
         if (_currentState != VoiceSupervisorState.speaking) {
-          debugPrint('Voice: model speaking (audio ${event.audio.length} bytes)');
+          debugPrint('Voice: model speaking');
           _setState(VoiceSupervisorState.speaking);
+          // Pause mic to prevent echo feedback (speaker → mic → interrupt loop).
+          _micSub?.pause();
         }
         // Play PCM audio through native AVAudioEngine.
         _pcmPlayer.play(event.audio);
@@ -388,6 +390,8 @@ class VoiceSupervisor {
       case AudioDone():
         debugPrint('Voice: model done speaking');
         _setState(VoiceSupervisorState.listening);
+        // Resume mic after model finishes speaking.
+        _micSub?.resume();
 
       case VoiceError():
         debugPrint('Voice error: ${event.message}');
