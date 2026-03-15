@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 
+import 'package:flutter/foundation.dart';
 import 'package:murminal/data/models/tool_result.dart';
 import 'package:murminal/data/models/voice_event.dart';
 import 'package:murminal/data/services/session_service.dart';
@@ -85,10 +86,13 @@ class ToolExecutor {
     final sessionName = args['session_name'] as String;
     final command = args['command'] as String;
 
+    debugPrint('ToolExecutor: send_command session="$sessionName" cmd="$command"');
     await _tmux.sendKeys(sessionName, command);
-    // Wait briefly for command output to appear, then capture.
+    // Wait for command output to appear, then capture.
     await Future<void>.delayed(sendCommandDelay);
     final output = await _tmux.capturePane(sessionName);
+    debugPrint('ToolExecutor: output=${output.length} chars, '
+        'preview="${output.length > 100 ? output.substring(0, 100) : output}"');
 
     return ToolResult.ok('send_command', {'output': output});
   }
