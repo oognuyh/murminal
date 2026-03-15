@@ -291,12 +291,11 @@ class _SessionCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: cardColor,
           borderRadius: BorderRadius.circular(12),
-          border: Border(
-            left: BorderSide(
-              color: borderColor,
-              width: (isRunning || isError) ? 3.0 : 0.0,
-            ),
-          ),
+          border: (isRunning || isError)
+              ? Border(
+                  left: BorderSide(color: borderColor, width: 3.0),
+                )
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
