@@ -5,6 +5,7 @@ import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/models/engine_profile.dart';
 import 'package:murminal/data/models/server_config.dart';
 import 'package:murminal/data/models/worktree_info.dart';
+import 'package:murminal/data/services/tmux_install_service.dart';
 import 'package:murminal/data/services/worktree_service.dart';
 
 /// Theme colors matching the app's dark slate design.
@@ -46,6 +47,12 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
   bool _isConnecting = false;
   String? _connectionError;
 
+  /// Tmux availability state for the selected server.
+  TmuxCheckResult? _tmuxCheckResult;
+  bool _isCheckingTmux = false;
+  bool _isInstallingTmux = false;
+  String? _tmuxInstallError;
+
   /// Worktree state.
   List<WorktreeInfo> _worktrees = [];
   WorktreeInfo? _selectedWorktree;
@@ -66,15 +73,17 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
   ///
   /// Registers the server config and obtains a connection. Updates
   /// [_isConnecting] and [_connectionError] to reflect progress.
+  /// After successful connection, checks tmux availability.
   Future<bool> _connectToServer() async {
     final server = _selectedServer;
     if (server == null) return false;
 
     final pool = ref.read(sshConnectionPoolProvider);
 
-    // Already connected; skip.
+    // Already connected; skip connection but still check tmux.
     if (pool.isConnected(server.id)) {
       setState(() => _connectionError = null);
+      await _checkTmuxAvailability();
       return true;
     }
 
@@ -90,6 +99,10 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
       if (mounted) {
         setState(() => _isConnecting = false);
       }
+
+      // Check tmux availability after successful connection.
+      await _checkTmuxAvailability();
+
       return true;
     } on Exception catch (e) {
       if (mounted) {
@@ -102,13 +115,119 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     }
   }
 
+  /// Check tmux availability on the connected server.
+  ///
+  /// Uses cached results from the pool to avoid re-checking.
+  /// Updates [_tmuxCheckResult] and [_isCheckingTmux] state.
+  Future<void> _checkTmuxAvailability() async {
+    final server = _selectedServer;
+    if (server == null) return;
+
+    final pool = ref.read(sshConnectionPoolProvider);
+
+    // Use cached result if available.
+    final cached = pool.getTmuxStatus(server.id);
+    if (cached != null) {
+      if (mounted) {
+        setState(() {
+          _tmuxCheckResult = cached;
+          _tmuxInstallError = null;
+        });
+      }
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _isCheckingTmux = true);
+    }
+
+    try {
+      final ssh = await pool.getConnection(server.id);
+      final installService = TmuxInstallService(ssh);
+      final result = await installService.checkTmux();
+
+      pool.setTmuxStatus(server.id, result);
+
+      if (mounted) {
+        setState(() {
+          _tmuxCheckResult = result;
+          _isCheckingTmux = false;
+          _tmuxInstallError = null;
+        });
+      }
+    } on Exception catch (e) {
+      if (mounted) {
+        setState(() {
+          _isCheckingTmux = false;
+          _tmuxInstallError = 'Failed to check tmux: $e';
+        });
+      }
+    }
+  }
+
+  /// Attempt to auto-install tmux on the connected server.
+  Future<void> _installTmux() async {
+    final server = _selectedServer;
+    final result = _tmuxCheckResult;
+    if (server == null || result == null) return;
+
+    final pool = ref.read(sshConnectionPoolProvider);
+
+    setState(() {
+      _isInstallingTmux = true;
+      _tmuxInstallError = null;
+    });
+
+    try {
+      final ssh = await pool.getConnection(server.id);
+      final installService = TmuxInstallService(ssh);
+      final success = await installService.installTmux(result.osType);
+
+      if (success) {
+        // Clear cached status and re-check to get version info.
+        pool.clearTmuxStatus(server.id);
+        if (mounted) {
+          setState(() => _isInstallingTmux = false);
+        }
+        await _checkTmuxAvailability();
+      } else {
+        if (mounted) {
+          setState(() {
+            _isInstallingTmux = false;
+            _tmuxInstallError =
+                'Installation completed but tmux is still not available';
+          });
+        }
+      }
+    } on TmuxInstallException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isInstallingTmux = false;
+          _tmuxInstallError = e.message;
+        });
+      }
+    } on Exception catch (e) {
+      if (mounted) {
+        setState(() {
+          _isInstallingTmux = false;
+          _tmuxInstallError = 'Installation failed: $e';
+        });
+      }
+    }
+  }
+
   /// Handle server selection change.
   ///
-  /// Resets connection error and worktree state when the server changes.
+  /// Resets connection error, tmux state, and worktree state when
+  /// the server changes.
   void _onServerChanged(ServerConfig? server) {
     setState(() {
       _selectedServer = server;
       _connectionError = null;
+      _tmuxCheckResult = null;
+      _isCheckingTmux = false;
+      _isInstallingTmux = false;
+      _tmuxInstallError = null;
       _worktrees = [];
       _selectedWorktree = null;
       _worktreeError = null;
@@ -218,6 +337,18 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedServer == null || _selectedEngine == null) return;
 
+    // Block session creation if tmux is not available.
+    if (_tmuxCheckResult != null && !_tmuxCheckResult!.isInstalled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('tmux is required to create sessions. '
+              'Please install tmux on the server first.'),
+          backgroundColor: _errorRed,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isCreating = true);
 
     try {
@@ -225,6 +356,21 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
       final connected = await _connectToServer();
       if (!connected) {
         setState(() => _isCreating = false);
+        return;
+      }
+
+      // Final tmux check: block if still not available.
+      if (_tmuxCheckResult != null && !_tmuxCheckResult!.isInstalled) {
+        setState(() => _isCreating = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('tmux is not installed on the server. '
+                  'Cannot create session.'),
+              backgroundColor: _errorRed,
+            ),
+          );
+        }
         return;
       }
 
@@ -310,6 +456,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
                     value == null ? 'Server is required' : null,
               ),
               _buildConnectionStatus(),
+              _buildTmuxStatus(),
               const SizedBox(height: 16),
               _buildDropdown<EngineProfile>(
                 label: 'Engine',
@@ -448,6 +595,211 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     }
 
     return const SizedBox.shrink();
+  }
+
+  /// Builds the tmux availability status indicator.
+  ///
+  /// Shows checking progress, installed version, or install prompt
+  /// with auto-install option and manual instructions.
+  Widget _buildTmuxStatus() {
+    if (_selectedServer == null) return const SizedBox.shrink();
+
+    // Still checking tmux.
+    if (_isCheckingTmux) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: _accent,
+              ),
+            ),
+            SizedBox(width: 8),
+            Text(
+              'Checking tmux...',
+              style: TextStyle(
+                color: _textSecondary,
+                fontSize: 12,
+                fontFamily: 'JetBrains Mono',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final result = _tmuxCheckResult;
+    if (result == null) return const SizedBox.shrink();
+
+    // tmux is installed.
+    if (result.isInstalled) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Color(0xFF4ADE80),
+              size: 14,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              result.version ?? 'tmux installed',
+              style: const TextStyle(
+                color: Color(0xFF4ADE80),
+                fontSize: 12,
+                fontFamily: 'JetBrains Mono',
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // tmux is NOT installed: show install prompt.
+    final installCmd = TmuxInstallService.getInstallCommand(result.osType);
+    final osName = TmuxInstallService.getOsDisplayName(result.osType);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: const Color(0xFFF59E0B).withValues(alpha: 0.5),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Color(0xFFF59E0B),
+                  size: 16,
+                ),
+                SizedBox(width: 8),
+                Text(
+                  'tmux not found',
+                  style: TextStyle(
+                    color: Color(0xFFF59E0B),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'JetBrains Mono',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'tmux is required for session management. '
+              'Detected OS: $osName',
+              style: const TextStyle(
+                color: _textSecondary,
+                fontSize: 12,
+                fontFamily: 'JetBrains Mono',
+              ),
+            ),
+            if (installCmd != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: _background,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  installCmd,
+                  style: const TextStyle(
+                    color: _textPrimary,
+                    fontSize: 11,
+                    fontFamily: 'JetBrains Mono',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 36,
+                      child: ElevatedButton.icon(
+                        onPressed:
+                            _isInstallingTmux ? null : _installTmux,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _accent,
+                          foregroundColor: _background,
+                          disabledBackgroundColor:
+                              _accent.withValues(alpha: 0.4),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                          ),
+                        ),
+                        icon: _isInstallingTmux
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: _background,
+                                ),
+                              )
+                            : const Icon(Icons.download, size: 16),
+                        label: Text(
+                          _isInstallingTmux
+                              ? 'Installing...'
+                              : 'Auto-install',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'JetBrains Mono',
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Please install tmux manually on the server.',
+                style: TextStyle(
+                  color: _textSecondary,
+                  fontSize: 12,
+                  fontFamily: 'JetBrains Mono',
+                ),
+              ),
+            ],
+            if (_tmuxInstallError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _tmuxInstallError!,
+                style: const TextStyle(
+                  color: _errorRed,
+                  fontSize: 11,
+                  fontFamily: 'JetBrains Mono',
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   /// Builds a section header label.
