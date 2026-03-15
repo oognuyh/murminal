@@ -20,7 +20,7 @@ class MockSshService extends SshService {
   }
 
   @override
-  Future<String> execute(String command) async {
+  Future<String> execute(String command, {bool throwOnError = true}) async {
     lastCommand = command;
     commands.add(command);
     if (_shouldThrow) throw Exception('SSH command failed');
