@@ -3,12 +3,14 @@ import 'dart:developer' as developer;
 
 import 'package:murminal/data/models/server_config.dart';
 import 'package:murminal/data/services/ssh_service.dart';
+import 'package:murminal/data/services/tmux_install_service.dart';
 
 /// Manages a pool of SSH connections across multiple servers.
 ///
 /// Supports lazy connection (connect on first use), periodic health checks,
 /// automatic reconnection with exponential backoff, and enforces a maximum
 /// connection limit per server.
+/// Tracks tmux availability per server to avoid redundant checks.
 class SshConnectionPool {
   static const _tag = 'SshConnectionPool';
 
@@ -21,6 +23,11 @@ class SshConnectionPool {
   final Map<String, SshService> _connections = {};
   final Map<String, ServerConfig> _configs = {};
   final Map<String, int> _connectionCounts = {};
+
+  /// Cached tmux check results per server ID.
+  ///
+  /// Populated on first connection and reused to avoid re-checking.
+  final Map<String, TmuxCheckResult> _tmuxStatus = {};
 
   final _stateController =
       StreamController<Map<String, ConnectionState>>.broadcast();
@@ -70,6 +77,23 @@ class SshConnectionPool {
   bool isReconnecting(String serverId) {
     final service = _connections[serverId];
     return service != null && service.isReconnecting;
+  }
+
+  /// Get the cached tmux check result for [serverId].
+  ///
+  /// Returns null if tmux has not been checked yet for this server.
+  TmuxCheckResult? getTmuxStatus(String serverId) => _tmuxStatus[serverId];
+
+  /// Store the tmux check result for [serverId].
+  void setTmuxStatus(String serverId, TmuxCheckResult result) {
+    _tmuxStatus[serverId] = result;
+  }
+
+  /// Clear the cached tmux status for [serverId].
+  ///
+  /// Use after a successful tmux installation to force re-checking.
+  void clearTmuxStatus(String serverId) {
+    _tmuxStatus.remove(serverId);
   }
 
   /// Get or create a connection for [serverId].
@@ -125,6 +149,7 @@ class SshConnectionPool {
     _connectionCounts.remove(serverId);
     _reconnectSubs[serverId]?.cancel();
     _reconnectSubs.remove(serverId);
+    _tmuxStatus.remove(serverId);
 
     if (service != null) {
       await service.disconnect();
@@ -169,6 +194,7 @@ class SshConnectionPool {
     _connections.clear();
     _configs.clear();
     _connectionCounts.clear();
+    _tmuxStatus.clear();
     _stateController.close();
     _reconnectionController.close();
   }
