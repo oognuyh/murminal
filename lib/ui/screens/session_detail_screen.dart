@@ -1,12 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:xterm/xterm.dart';
 
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/services/ssh_service.dart' as ssh;
-import 'package:murminal/data/services/tmux_controller.dart';
 import 'package:murminal/ui/widgets/ssh_reconnection_banner.dart';
 
 /// Theme colors matching the app's dark slate design.
@@ -19,11 +20,9 @@ const _textSecondary = Color(0xFF94A3B8);
 /// Default number of scrollback lines for the terminal buffer.
 const _defaultScrollbackLines = 1000;
 
-/// Interval between tmux capture-pane polls.
-const _captureInterval = Duration(seconds: 1);
-
-/// Number of tmux pane lines to capture per poll.
-const _captureLines = 50;
+/// Default PTY dimensions when the terminal view size is unknown.
+const _defaultCols = 80;
+const _defaultRows = 24;
 
 /// Terminal theme matching the app's dark slate/cyan palette.
 final _terminalTheme = TerminalTheme(
@@ -52,25 +51,28 @@ final _terminalTheme = TerminalTheme(
   searchHitForeground: _textPrimary,
 );
 
-/// Tmux key identifiers for special key buttons.
-class _TmuxKeys {
-  static const tab = 'Tab';
-  static const escape = 'Escape';
-  static const up = 'Up';
-  static const down = 'Down';
-  static const left = 'Left';
-  static const right = 'Right';
-  static const ctrlC = 'C-c';
-  static const ctrlD = 'C-d';
-  static const ctrlZ = 'C-z';
+/// ANSI escape sequences for special keys sent directly to the PTY.
+class _PtyKeys {
+  static final tab = Uint8List.fromList([0x09]);
+  static final escape = Uint8List.fromList([0x1B]);
+  static final ctrlC = Uint8List.fromList([0x03]);
+  static final ctrlD = Uint8List.fromList([0x04]);
+  static final ctrlZ = Uint8List.fromList([0x1A]);
+  static final up = Uint8List.fromList(utf8.encode('\x1b[A'));
+  static final down = Uint8List.fromList(utf8.encode('\x1b[B'));
+  static final right = Uint8List.fromList(utf8.encode('\x1b[C'));
+  static final left = Uint8List.fromList(utf8.encode('\x1b[D'));
 }
 
-/// Screen displaying a terminal view for a specific session.
+/// Screen displaying an interactive terminal connected to a remote SSH PTY.
 ///
-/// Renders tmux capture-pane output in an xterm.dart [TerminalView] widget,
-/// polling at regular intervals to stream SSH output in near real-time.
-/// Provides on-screen keyboard input with a fallback text bar and special
-/// key buttons for Tab, Ctrl+C, arrow keys, and Escape.
+/// Establishes a direct PTY channel over SSH so that keyboard input flows
+/// to the remote shell in real time and stdout is rendered immediately in
+/// the xterm widget. Special key buttons (Tab, Ctrl+C, arrows, etc.) send
+/// raw escape sequences to the PTY.
+///
+/// The xterm widget handles all keyboard input natively; no separate text
+/// input bar is needed. tmux sessions still work inside the PTY shell.
 class SessionDetailScreen extends ConsumerStatefulWidget {
   /// The session ID to display.
   final String sessionId;
@@ -91,140 +93,161 @@ class SessionDetailScreen extends ConsumerStatefulWidget {
 
 class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   late final Terminal _terminal;
-  late final TextEditingController _inputController;
-  late final FocusNode _inputFocusNode;
-  Timer? _pollTimer;
-  String _lastOutput = '';
+  final _terminalKey = GlobalKey();
+  ssh.SshPtySession? _ptySession;
+  StreamSubscription<Uint8List>? _stdoutSub;
   bool _showSpecialKeys = true;
+  bool _connecting = true;
+  String? _errorMessage;
+
+  /// Current PTY dimensions used for resize detection.
+  int _currentCols = _defaultCols;
+  int _currentRows = _defaultRows;
 
   @override
   void initState() {
     super.initState();
     _terminal = Terminal(maxLines: _defaultScrollbackLines);
-    _inputController = TextEditingController();
-    _inputFocusNode = FocusNode();
-    _initAndStartPolling();
+
+    // Listen for terminal output (user typing) and forward to PTY stdin.
+    _terminal.onOutput = _onTerminalOutput;
+
+    _initPtyConnection();
   }
-
-  /// Resolve the session's server ID and create a TmuxController
-  /// from the connection pool, then start polling.
-  Future<void> _initAndStartPolling() async {
-    final sessionService = ref.read(sessionServiceProvider);
-    final session = sessionService.getSession(widget.sessionId);
-
-    if (session != null) {
-      final pool = ref.read(sshConnectionPoolProvider);
-
-      // Re-register the server config from persistent storage if the
-      // pool lost it (e.g. after app restart).
-      if (!pool.isConnected(session.serverId)) {
-        final serverRepo = ref.read(serverRepositoryProvider);
-        final serverConfig = serverRepo.getById(session.serverId);
-        if (serverConfig != null) {
-          pool.register(serverConfig);
-        }
-      }
-
-      try {
-        final sshConn = await pool.getConnection(session.serverId);
-        _poolTmux = TmuxController(sshConn);
-        // Resize tmux to match screen after first frame.
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _resizeTmux();
-        });
-      } catch (e) {
-        debugPrint('SSH connection failed: $e');
-      }
-    }
-    _startPolling();
-  }
-
-  /// TmuxController using the pooled SSH connection for this session's server.
-  /// Falls back to the global tmuxControllerProvider if not resolved.
-  TmuxController? _poolTmux;
-
-  TmuxController get _tmux =>
-      _poolTmux ?? ref.read(tmuxControllerProvider);
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
-    _inputController.dispose();
-    _inputFocusNode.dispose();
+    _stdoutSub?.cancel();
+    _ptySession?.close();
     super.dispose();
   }
 
-  /// Resize the remote tmux session to match the terminal view dimensions.
-  ///
-  /// Calculates columns and rows from the screen width and a fixed
-  /// character size based on the terminal font.
-  Future<void> _resizeTmux() async {
-    if (_poolTmux == null) return;
-    final screenWidth = MediaQuery.of(context).size.width - 16; // padding
-    final screenHeight = MediaQuery.of(context).size.height * 0.6;
+  /// Establish the SSH PTY connection for this session's server.
+  Future<void> _initPtyConnection() async {
+    final sessionService = ref.read(sessionServiceProvider);
+    final session = sessionService.getSession(widget.sessionId);
+
+    if (session == null) {
+      setState(() {
+        _connecting = false;
+        _errorMessage = 'Session not found';
+      });
+      return;
+    }
+
+    final pool = ref.read(sshConnectionPoolProvider);
+
+    // Re-register the server config from persistent storage if the
+    // pool lost it (e.g. after app restart).
+    if (!pool.isConnected(session.serverId)) {
+      final serverRepo = ref.read(serverRepositoryProvider);
+      final serverConfig = serverRepo.getById(session.serverId);
+      if (serverConfig != null) {
+        pool.register(serverConfig);
+      }
+    }
+
+    try {
+      final sshService = await pool.getConnection(session.serverId);
+
+      // Calculate initial terminal size from screen after first frame.
+      final size = _estimateTerminalSize();
+      _currentCols = size.$1;
+      _currentRows = size.$2;
+
+      final ptySession = await sshService.shell(
+        cols: _currentCols,
+        rows: _currentRows,
+      );
+
+      _ptySession = ptySession;
+
+      // Forward PTY stdout to the xterm terminal widget.
+      _stdoutSub = ptySession.stdout.listen(
+        (data) {
+          _terminal.write(String.fromCharCodes(data));
+        },
+        onDone: () {
+          if (mounted) {
+            setState(() {
+              _errorMessage = 'Connection closed';
+            });
+          }
+        },
+        onError: (Object error) {
+          debugPrint('PTY stdout error: $error');
+          if (mounted) {
+            setState(() {
+              _errorMessage = 'Connection error: $error';
+            });
+          }
+        },
+      );
+
+      if (mounted) {
+        setState(() {
+          _connecting = false;
+        });
+      }
+
+      // Schedule a resize after the terminal view is laid out.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _syncTerminalSize();
+      });
+    } catch (e) {
+      debugPrint('SSH PTY connection failed: $e');
+      if (mounted) {
+        setState(() {
+          _connecting = false;
+          _errorMessage = 'Connection failed: $e';
+        });
+      }
+    }
+  }
+
+  /// Handle terminal output events (user keyboard input captured by xterm).
+  void _onTerminalOutput(String data) {
+    final pty = _ptySession;
+    if (pty == null || pty.isClosed) return;
+    pty.write(Uint8List.fromList(utf8.encode(data)));
+  }
+
+  /// Send raw bytes to the PTY (for special key buttons).
+  void _sendToPty(Uint8List data) {
+    final pty = _ptySession;
+    if (pty == null || pty.isClosed) return;
+    pty.write(data);
+  }
+
+  /// Estimate terminal dimensions from available screen space.
+  (int cols, int rows) _estimateTerminalSize() {
+    final mediaQuery = MediaQuery.maybeOf(context);
+    if (mediaQuery == null) return (_defaultCols, _defaultRows);
+
+    final screenWidth = mediaQuery.size.width - 16; // padding
+    final screenHeight = mediaQuery.size.height * 0.7;
     // Approximate character dimensions for JetBrains Mono 12pt.
     const charWidth = 7.2;
     const charHeight = 16.0;
     final cols = (screenWidth / charWidth).floor().clamp(20, 300);
     final rows = (screenHeight / charHeight).floor().clamp(10, 100);
-    await _poolTmux!.resizeWindow(widget.sessionId, cols, rows);
+    return (cols, rows);
   }
 
-  /// Start polling tmux capture-pane for terminal output.
-  void _startPolling() {
-    _captureOutput();
-    _pollTimer = Timer.periodic(_captureInterval, (_) => _captureOutput());
-  }
+  /// Recalculate terminal size and send resize to PTY if dimensions changed.
+  void _syncTerminalSize() {
+    final pty = _ptySession;
+    if (pty == null || pty.isClosed) return;
 
-  /// Fetch the latest tmux pane content and write new output to the terminal.
-  Future<void> _captureOutput() async {
-    try {
-      final tmux = _tmux;
-      final output = await tmux.capturePane(
-        widget.sessionId,
-        lines: _captureLines,
-      );
+    final size = _estimateTerminalSize();
+    final newCols = size.$1;
+    final newRows = size.$2;
 
-      if (output == _lastOutput) return;
-
-      // Use ANSI escape sequences to clear and rewrite the terminal.
-      _terminal.write('\x1b[2J\x1b[H$output');
-      _lastOutput = output;
-    } catch (e) {
-      debugPrint('capturePane error: $e');
+    if (newCols != _currentCols || newRows != _currentRows) {
+      _currentCols = newCols;
+      _currentRows = newRows;
+      pty.resize(newCols, newRows);
     }
-  }
-
-  /// Send typed text to tmux as a command (with Enter).
-  Future<void> _submitInput() async {
-    final text = _inputController.text;
-    if (text.isEmpty) return;
-
-    _inputController.clear();
-    try {
-      final tmux = _tmux;
-      await tmux.sendKeys(widget.sessionId, text);
-      // Trigger an immediate capture to show the result.
-      _captureOutput();
-    } catch (_) {
-      // Ignore send failures.
-    }
-  }
-
-  /// Send a special key to tmux without appending Enter.
-  Future<void> _sendSpecialKey(String key) async {
-    try {
-      final tmux = _tmux;
-      await tmux.sendRawKeys(widget.sessionId, key);
-      _captureOutput();
-    } catch (_) {
-      // Ignore send failures.
-    }
-  }
-
-  /// Dismiss the on-screen keyboard.
-  void _dismissKeyboard() {
-    _inputFocusNode.unfocus();
   }
 
   @override
@@ -260,12 +283,6 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
             },
             tooltip: _showSpecialKeys ? 'Hide special keys' : 'Show special keys',
           ),
-          // Dismiss keyboard button.
-          IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down, color: _textSecondary),
-            onPressed: _dismissKeyboard,
-            tooltip: 'Dismiss keyboard',
-          ),
           // Session status indicator.
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -273,8 +290,10 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
               child: Container(
                 width: 8,
                 height: 8,
-                decoration: const BoxDecoration(
-                  color: _accent,
+                decoration: BoxDecoration(
+                  color: _connecting
+                      ? Colors.orange
+                      : (_errorMessage != null ? Colors.red : _accent),
                   shape: BoxShape.circle,
                 ),
               ),
@@ -288,28 +307,79 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
           children: [
             // SSH reconnection banner.
             _buildReconnectionBanner(),
-            // Terminal view.
+            // Terminal view or loading/error state.
             Expanded(
-              child: GestureDetector(
-                onTap: () {
-                  // Tap terminal to focus the input field.
-                  _inputFocusNode.requestFocus();
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // Sync terminal size on layout changes.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _syncTerminalSize();
+                  });
+
+                  if (_connecting) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: _accent),
+                    );
+                  }
+
+                  if (_errorMessage != null && _ptySession == null) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.error_outline,
+                              color: Colors.red,
+                              size: 48,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              _errorMessage!,
+                              style: const TextStyle(
+                                color: _textSecondary,
+                                fontSize: 14,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton(
+                              onPressed: () {
+                                setState(() {
+                                  _connecting = true;
+                                  _errorMessage = null;
+                                });
+                                _initPtyConnection();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _accent,
+                              ),
+                              child: const Text('Retry'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  return TerminalView(
+                    _terminal,
+                    key: _terminalKey,
+                    theme: _terminalTheme,
+                    textStyle: const TerminalStyle(
+                      fontSize: 12,
+                      fontFamily: 'JetBrains Mono',
+                    ),
+                    padding: const EdgeInsets.all(8),
+                    autofocus: true,
+                    hardwareKeyboardOnly: false,
+                  );
                 },
-                child: TerminalView(
-                  _terminal,
-                  theme: _terminalTheme,
-                  textStyle: const TerminalStyle(
-                    fontSize: 12,
-                    fontFamily: 'JetBrains Mono',
-                  ),
-                  padding: const EdgeInsets.all(8),
-                ),
               ),
             ),
             // Special keys row.
             if (_showSpecialKeys) _buildSpecialKeysBar(),
-            // Text input bar.
-            _buildInputBar(),
           ],
         ),
       ),
@@ -356,16 +426,16 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            _specialKeyButton('Tab', _TmuxKeys.tab),
-            _specialKeyButton('Esc', _TmuxKeys.escape),
-            _specialKeyButton('Ctrl+C', _TmuxKeys.ctrlC),
-            _specialKeyButton('Ctrl+D', _TmuxKeys.ctrlD),
-            _specialKeyButton('Ctrl+Z', _TmuxKeys.ctrlZ),
+            _specialKeyButton('Tab', _PtyKeys.tab),
+            _specialKeyButton('Esc', _PtyKeys.escape),
+            _specialKeyButton('Ctrl+C', _PtyKeys.ctrlC),
+            _specialKeyButton('Ctrl+D', _PtyKeys.ctrlD),
+            _specialKeyButton('Ctrl+Z', _PtyKeys.ctrlZ),
             const SizedBox(width: 8),
-            _specialKeyButton('\u2191', _TmuxKeys.up, tooltip: 'Up'),
-            _specialKeyButton('\u2193', _TmuxKeys.down, tooltip: 'Down'),
-            _specialKeyButton('\u2190', _TmuxKeys.left, tooltip: 'Left'),
-            _specialKeyButton('\u2192', _TmuxKeys.right, tooltip: 'Right'),
+            _specialKeyButton('\u2191', _PtyKeys.up, tooltip: 'Up'),
+            _specialKeyButton('\u2193', _PtyKeys.down, tooltip: 'Down'),
+            _specialKeyButton('\u2190', _PtyKeys.left, tooltip: 'Left'),
+            _specialKeyButton('\u2192', _PtyKeys.right, tooltip: 'Right'),
           ],
         ),
       ),
@@ -373,11 +443,11 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   }
 
   /// Build an individual special key button.
-  Widget _specialKeyButton(String label, String tmuxKey, {String? tooltip}) {
+  Widget _specialKeyButton(String label, Uint8List keyData, {String? tooltip}) {
     final button = Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () => _sendSpecialKey(tmuxKey),
+        onTap: () => _sendToPty(keyData),
         borderRadius: BorderRadius.circular(6),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -404,59 +474,5 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
       return Tooltip(message: tooltip, child: button);
     }
     return button;
-  }
-
-  /// Build the bottom text input bar for fallback typing.
-  Widget _buildInputBar() {
-    return Container(
-      color: _surface,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Row(
-        children: [
-          // Dollar-sign prompt indicator.
-          const Text(
-            '\$',
-            style: TextStyle(
-              color: _accent,
-              fontSize: 14,
-              fontFamily: 'JetBrains Mono',
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Text input field.
-          Expanded(
-            child: TextField(
-              controller: _inputController,
-              focusNode: _inputFocusNode,
-              style: const TextStyle(
-                color: _textPrimary,
-                fontSize: 14,
-                fontFamily: 'JetBrains Mono',
-              ),
-              decoration: const InputDecoration(
-                hintText: 'Type command...',
-                hintStyle: TextStyle(color: _textSecondary, fontSize: 14),
-                border: InputBorder.none,
-                isDense: true,
-                contentPadding: EdgeInsets.symmetric(vertical: 8),
-              ),
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) => _submitInput(),
-              autocorrect: false,
-              enableSuggestions: false,
-            ),
-          ),
-          // Send button.
-          IconButton(
-            icon: const Icon(Icons.send, color: _accent, size: 20),
-            onPressed: _submitInput,
-            tooltip: 'Send command',
-            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            padding: EdgeInsets.zero,
-          ),
-        ],
-      ),
-    );
   }
 }

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
@@ -57,6 +58,46 @@ class SshCommandException implements Exception {
   String toString() =>
       'SshCommandException: "$command" exited with code $exitCode'
       '${stderr.isNotEmpty ? '\n$stderr' : ''}';
+}
+
+/// An interactive PTY session over SSH.
+///
+/// Wraps an [SSHSession] with PTY request, providing [stdout] for reading
+/// terminal output and [write] / [resize] for sending input and window
+/// size changes (SIGWINCH).
+class SshPtySession {
+  final SSHSession _session;
+  bool _closed = false;
+
+  /// Stream of raw bytes from the remote PTY stdout.
+  late final Stream<Uint8List> stdout;
+
+  /// Completes when the underlying channel is closed.
+  Future<void> get done => _session.done;
+
+  SshPtySession(this._session) {
+    stdout = _session.stdout;
+    _session.done.then((_) => _closed = true);
+  }
+
+  /// Write raw bytes to the remote PTY stdin.
+  void write(Uint8List data) {
+    _session.stdin.add(data);
+  }
+
+  /// Notify the remote PTY of a terminal resize (sends SIGWINCH).
+  void resize(int width, int height) {
+    _session.resizeTerminal(width, height);
+  }
+
+  /// Close the PTY session and release resources.
+  void close() {
+    _closed = true;
+    _session.close();
+  }
+
+  /// Whether the session has been closed.
+  bool get isClosed => _closed;
 }
 
 /// SSH client service wrapping dartssh2.
@@ -214,6 +255,33 @@ class SshService {
     }
 
     return stdout;
+  }
+
+  /// Start an interactive PTY shell session.
+  ///
+  /// Requests a pseudo-terminal with the given [cols] and [rows] dimensions,
+  /// then starts a login shell. Returns an [SshPtySession] whose [stdout]
+  /// stream delivers raw terminal output and whose [write] method sends
+  /// input bytes to the remote shell.
+  ///
+  /// The caller is responsible for closing the returned session when done.
+  Future<SshPtySession> shell({
+    int cols = 80,
+    int rows = 24,
+  }) async {
+    final client = _client;
+    if (client == null || !isConnected) {
+      throw StateError('SSH client is not connected');
+    }
+
+    final session = await client.shell(
+      pty: SSHPtyConfig(
+        width: cols,
+        height: rows,
+      ),
+    );
+
+    return SshPtySession(session);
   }
 
   /// Attempt reconnection with exponential backoff.
