@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:murminal/data/models/gemini_realtime_event.dart';
 import 'package:murminal/data/models/tool_definition.dart';
 import 'package:murminal/data/models/voice_event.dart';
@@ -226,6 +228,10 @@ class GeminiRealtimeService extends RealtimeVoiceService {
   void _onMessage(dynamic raw) {
     if (raw is! String) return;
 
+    // Log first 200 chars of every incoming message for debugging.
+    final preview = raw.length > 200 ? '${raw.substring(0, 200)}...' : raw;
+    debugPrint('Gemini ← $preview');
+
     final event = GeminiRealtimeEvent.fromJson(raw);
     _dispatchEvent(event);
   }
@@ -233,7 +239,7 @@ class GeminiRealtimeService extends RealtimeVoiceService {
   void _dispatchEvent(GeminiRealtimeEvent event) {
     switch (event) {
       case GeminiSetupComplete():
-        developer.log('Setup complete', name: _tag);
+        debugPrint('Gemini: setupComplete received');
         _eventController.add(const SessionCreated('gemini-live'));
 
       case GeminiTextChunk():
