@@ -19,6 +19,7 @@ import 'package:murminal/data/services/ssh_connection_pool.dart';
 import 'package:murminal/data/services/ssh_service.dart';
 import 'package:murminal/data/services/tmux_controller.dart';
 import 'package:murminal/data/services/tool_executor.dart';
+import 'package:murminal/data/services/voice/gemini_realtime_service.dart';
 import 'package:murminal/data/services/voice/qwen_realtime_service.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
 import 'package:murminal/data/services/engine_registry.dart';
@@ -231,10 +232,14 @@ final micServiceProvider = Provider<MicService>((ref) {
 
 /// Realtime voice service backed by the selected provider.
 ///
-/// Currently defaults to [QwenRealtimeService]. When additional providers
-/// are implemented, this should switch based on [voiceProviderSettingProvider].
+/// Switches implementation based on [voiceProviderSettingProvider].
 final realtimeVoiceServiceProvider = Provider<RealtimeVoiceService>((ref) {
-  return QwenRealtimeService();
+  final provider = ref.watch(voiceProviderSettingProvider);
+  return switch (provider) {
+    VoiceProvider.qwen => QwenRealtimeService(),
+    VoiceProvider.gemini => GeminiRealtimeService(),
+    VoiceProvider.openai => QwenRealtimeService(), // OpenAI-compatible
+  };
 });
 
 /// Output monitor for detecting tmux pane changes.
