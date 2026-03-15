@@ -13,6 +13,7 @@ import 'package:murminal/ui/servers/server_list_view.dart';
 import 'package:murminal/ui/sessions/session_list_view.dart';
 import 'package:murminal/ui/settings/api_keys_screen.dart';
 import 'package:murminal/ui/settings/settings_view.dart';
+import 'package:murminal/ui/voice/voice_session_screen.dart';
 import 'package:murminal/ui/widgets/main_scaffold.dart';
 
 /// Route paths for the main tabs.
@@ -28,6 +29,7 @@ abstract final class AppRoutes {
   static const engineProfileEditor = '/engine-profiles/new';
   static const engineProfileDetail = '/engine-profiles/:profileName';
   static const apiKeys = '/api-keys';
+  static const voiceSession = '/voice-session/:serverId';
 }
 
 /// Maps route location to tab index.
@@ -92,6 +94,14 @@ final router = GoRouter(
       path: AppRoutes.apiKeys,
       parentNavigatorKey: _rootNavigatorKey,
       builder: (context, state) => const ApiKeysScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.voiceSession,
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final serverId = state.pathParameters['serverId']!;
+        return VoiceSessionScreen(serverId: serverId);
+      },
     ),
     GoRoute(
       path: AppRoutes.engineProfiles,
