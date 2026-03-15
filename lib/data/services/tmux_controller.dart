@@ -117,6 +117,25 @@ class TmuxController {
     }
   }
 
+  /// Send raw [keys] to the tmux session without appending Enter.
+  ///
+  /// Use this for special keys (Tab, Escape, arrow keys, Ctrl sequences)
+  /// or individual characters that should not trigger a newline.
+  /// Throws [TmuxCommandException] if the command fails.
+  Future<void> sendRawKeys(String session, String keys) async {
+    final fullName = '$sessionPrefix$session';
+    final cmd = 'tmux send-keys -t "$fullName" $keys';
+
+    try {
+      await _ssh.execute(cmd);
+    } catch (e) {
+      throw TmuxCommandException(
+        command: cmd,
+        message: 'Failed to send raw keys to session "$fullName": $e',
+      );
+    }
+  }
+
   /// Capture the last [lines] lines of output from the tmux pane
   /// in the given [session].
   ///
