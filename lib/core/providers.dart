@@ -23,9 +23,11 @@ import 'package:murminal/data/services/voice/qwen_realtime_service.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
 import 'package:murminal/data/services/engine_registry.dart';
 import 'package:murminal/data/services/feedback_sound_service.dart';
+import 'package:murminal/data/services/error_recovery_service.dart';
 import 'package:murminal/data/services/voice_supervisor.dart';
 import 'package:murminal/data/services/worktree_service.dart';
 import 'package:murminal/data/models/voice_supervisor_state.dart';
+import 'package:murminal/data/models/error_recovery_event.dart';
 
 /// Singleton [EngineRegistry] for managing engine profiles.
 ///
@@ -256,6 +258,33 @@ final outputMonitorProvider = Provider<OutputMonitor>((ref) {
   return monitor;
 });
 
+/// Error recovery service parameterized by server ID.
+///
+/// Coordinates all error recovery flows for a given server:
+/// SSH disconnect, WebSocket disconnect, audio interruption,
+/// API rate limit, and tmux session crash detection.
+final errorRecoveryServiceProvider =
+    Provider.family<ErrorRecoveryService, String>((ref, serverId) {
+  final pool = ref.watch(sshConnectionPoolProvider);
+  final sessionSvc = ref.watch(sessionServiceProvider);
+  final service = ErrorRecoveryService(
+    sshPool: pool,
+    sessionService: sessionSvc,
+    serverId: serverId,
+  );
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+/// Stream of error recovery events for UI binding.
+///
+/// Parameterized by server ID to match [errorRecoveryServiceProvider].
+final errorRecoveryEventsProvider =
+    StreamProvider.family<ErrorRecoveryEvent, String>((ref, serverId) {
+  final service = ref.watch(errorRecoveryServiceProvider(serverId));
+  return service.events;
+});
+
 /// Voice supervisor parameterized by server ID.
 ///
 /// Creates the full voice-to-terminal pipeline for the given server.
@@ -277,6 +306,7 @@ final voiceSupervisorProvider =
     toolExecutor: toolExecutor,
     serverId: serverId,
     sshPool: ref.watch(sshConnectionPoolProvider),
+    errorRecovery: ref.watch(errorRecoveryServiceProvider(serverId)),
   );
   ref.onDispose(supervisor.dispose);
   return supervisor;

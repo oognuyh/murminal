@@ -8,7 +8,9 @@ import 'package:murminal/data/models/output_change_event.dart';
 import 'package:murminal/data/models/tool_definition.dart';
 import 'package:murminal/data/models/voice_event.dart';
 import 'package:murminal/data/models/voice_supervisor_state.dart';
+import 'package:murminal/data/models/error_recovery_event.dart';
 import 'package:murminal/data/services/audio_session_service.dart';
+import 'package:murminal/data/services/error_recovery_service.dart';
 import 'package:murminal/data/services/mic_service.dart';
 import 'package:murminal/data/services/output_monitor.dart';
 import 'package:murminal/data/services/pattern_detector.dart';
@@ -44,6 +46,7 @@ class VoiceSupervisor {
   final ReportGenerator? _reportGenerator;
   final ToolExecutor _toolExecutor;
   final SshConnectionPool? _sshPool;
+  final ErrorRecoveryService? _errorRecovery;
 
   /// The server ID this supervisor is operating against.
   final String serverId;
@@ -57,6 +60,7 @@ class VoiceSupervisor {
   StreamSubscription<OutputChangeEvent>? _outputSub;
   StreamSubscription<AudioSessionState>? _audioStateSub;
   StreamSubscription<SshReconnectionEvent>? _reconnectSub;
+  StreamSubscription<ErrorRecoveryEvent>? _errorRecoverySub;
 
   /// Cached API key for WebSocket reconnection after audio interruption.
   String? _apiKey;
@@ -78,6 +82,7 @@ class VoiceSupervisor {
     SshConnectionPool? sshPool,
     PatternDetector? patternDetector,
     ReportGenerator? reportGenerator,
+    ErrorRecoveryService? errorRecovery,
   })  : _voiceService = voiceService,
         _audioSession = audioSession,
         _mic = mic,
@@ -86,7 +91,8 @@ class VoiceSupervisor {
         _patternDetector = patternDetector,
         _reportGenerator = reportGenerator,
         _toolExecutor = toolExecutor,
-        _sshPool = sshPool;
+        _sshPool = sshPool,
+        _errorRecovery = errorRecovery;
 
   /// Stream of supervisor state changes for UI binding.
   Stream<VoiceSupervisorState> get state => _stateController.stream;
@@ -257,6 +263,14 @@ class VoiceSupervisor {
             _sshPool.reconnectionEvents.listen(_handleReconnectionEvent);
       }
 
+      // 9. Subscribe to error recovery events for unified voice notifications.
+      _errorRecoverySub?.cancel();
+      if (_errorRecovery != null) {
+        _errorRecovery.startMonitoring();
+        _errorRecoverySub =
+            _errorRecovery.events.listen(_handleErrorRecoveryEvent);
+      }
+
       _setState(VoiceSupervisorState.listening);
       developer.log('Pipeline started', name: _tag);
     } catch (e) {
@@ -281,6 +295,8 @@ class VoiceSupervisor {
     _outputSub?.cancel();
     _audioStateSub?.cancel();
     _reconnectSub?.cancel();
+    _errorRecoverySub?.cancel();
+    _errorRecovery?.dispose();
     _stateController.close();
   }
 
@@ -404,6 +420,7 @@ class VoiceSupervisor {
     }
 
     _preInterruptionState = _currentState;
+    _errorRecovery?.reportAudioInterruption();
     developer.log('Audio interrupted, pausing pipeline', name: _tag);
 
     // Pause the microphone to free the audio route.
@@ -456,6 +473,7 @@ class VoiceSupervisor {
       }
 
       // 5. Notify the user that the voice session has recovered.
+      _errorRecovery?.reportAudioResumed();
       _sendRecoveryNotification();
 
       developer.log('Pipeline restored after interruption', name: _tag);
@@ -559,6 +577,44 @@ class VoiceSupervisor {
           name: _tag,
         );
       }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Unified error recovery voice notifications
+  // ---------------------------------------------------------------------------
+
+  /// Handles error recovery events from [ErrorRecoveryService] and
+  /// announces them via voice when appropriate.
+  ///
+  /// Only announces events in [detected], [recovered], and [failed] phases
+  /// to avoid excessive chatter. Skips SSH events since they are already
+  /// handled by [_handleReconnectionEvent].
+  void _handleErrorRecoveryEvent(ErrorRecoveryEvent event) {
+    if (_currentState == VoiceSupervisorState.idle ||
+        _currentState == VoiceSupervisorState.error) {
+      return;
+    }
+
+    // Skip SSH events — already handled by _handleReconnectionEvent.
+    if (event.category == ErrorCategory.sshDisconnect) return;
+
+    // Skip audio interruption events — already handled with inline
+    // recovery notifications.
+    if (event.category == ErrorCategory.audioInterruption) return;
+
+    // Only announce key phases to avoid excessive voice notifications.
+    if (event.phase == RecoveryPhase.recovering) return;
+
+    final report = '[REPORT] ${event.message}';
+    final reportBytes = Uint8List.fromList(utf8.encode(report));
+    try {
+      _voiceService.injectAudioReport(reportBytes);
+    } catch (e) {
+      developer.log(
+        'Failed to send error recovery notification: $e',
+        name: _tag,
+      );
     }
   }
 
@@ -750,6 +806,10 @@ class VoiceSupervisor {
 
     _reconnectSub?.cancel();
     _reconnectSub = null;
+
+    _errorRecoverySub?.cancel();
+    _errorRecoverySub = null;
+    _errorRecovery?.stopMonitoring();
 
     _apiKey = null;
     _preInterruptionState = null;
