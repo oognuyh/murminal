@@ -11,6 +11,7 @@ import 'package:murminal/ui/screens/new_session_screen.dart';
 import 'package:murminal/ui/screens/session_detail_screen.dart';
 import 'package:murminal/ui/servers/server_list_view.dart';
 import 'package:murminal/ui/sessions/session_list_view.dart';
+import 'package:murminal/ui/settings/api_keys_screen.dart';
 import 'package:murminal/ui/settings/settings_view.dart';
 import 'package:murminal/ui/widgets/main_scaffold.dart';
 
@@ -26,6 +27,7 @@ abstract final class AppRoutes {
   static const engineProfiles = '/engine-profiles';
   static const engineProfileEditor = '/engine-profiles/new';
   static const engineProfileDetail = '/engine-profiles/:profileName';
+  static const apiKeys = '/api-keys';
 }
 
 /// Maps route location to tab index.
@@ -85,6 +87,11 @@ final router = GoRouter(
           existingConfig: extra['existingConfig'] as ServerConfig?,
         );
       },
+    ),
+    GoRoute(
+      path: AppRoutes.apiKeys,
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) => const ApiKeysScreen(),
     ),
     GoRoute(
       path: AppRoutes.engineProfiles,
