@@ -79,6 +79,16 @@ class SshConnectionPool {
     return service != null && service.isConnected;
   }
 
+  /// Get an already-connected SSH service synchronously.
+  ///
+  /// Returns null if the server is not connected. Unlike [getConnection],
+  /// this does not attempt to establish a new connection.
+  SshService? getConnectionSync(String serverId) {
+    final service = _connections[serverId];
+    if (service != null && service.isConnected) return service;
+    return null;
+  }
+
   /// Whether the connection for [serverId] is currently reconnecting.
   bool isReconnecting(String serverId) {
     final service = _connections[serverId];

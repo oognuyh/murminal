@@ -35,10 +35,15 @@ class _MurminalAppState extends ConsumerState<MurminalApp> {
     final pool = ref.read(sshConnectionPoolProvider);
     final servers = serverRepo.getAll();
 
+    final sessionService = ref.read(sessionServiceProvider);
+
     for (final server in servers) {
       pool.register(server);
       try {
         await pool.getConnection(server.id);
+        // Reconcile sessions with live tmux state so stale "running"
+        // sessions are marked as "done" if their tmux session is gone.
+        await sessionService.listSessions(serverId: server.id);
       } catch (_) {
         // Connection may fail if server is offline — that's expected.
       }

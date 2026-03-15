@@ -72,6 +72,8 @@ class SettingsView extends ConsumerWidget {
           onChanged: (value) {
             if (value != null) {
               ref.read(voiceProviderSettingProvider.notifier).state = value;
+              final prefs = ref.read(sharedPreferencesProvider);
+              prefs.setString('voice_provider', value.name);
             }
           },
         ),

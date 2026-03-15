@@ -439,7 +439,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
       await sessionService.createSession(
         serverId: _selectedServer!.id,
         engine: engine.name,
-        name: '${engine.displayName}-${_selectedServer!.label}',
+        name: '${engine.displayName}-${_selectedServer!.label}-${DateTime.now().millisecondsSinceEpoch % 10000}',
         launchCommand: launchCommand,
         worktreePath: _selectedWorktree?.path,
         worktreeBranch: _selectedWorktree?.branch,

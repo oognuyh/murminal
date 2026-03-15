@@ -64,9 +64,19 @@ final pollingIntervalProvider = StateProvider<double>((ref) {
 
 /// Currently selected voice provider.
 ///
-/// Defaults to [VoiceProvider.qwen]. Updated from the settings UI.
+/// Persisted in [SharedPreferences]. Defaults to [VoiceProvider.gemini].
 final voiceProviderSettingProvider =
-    StateProvider<VoiceProvider>((ref) => VoiceProvider.qwen);
+    StateProvider<VoiceProvider>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  final stored = prefs.getString('voice_provider');
+  if (stored != null) {
+    return VoiceProvider.values.firstWhere(
+      (p) => p.name == stored,
+      orElse: () => VoiceProvider.gemini,
+    );
+  }
+  return VoiceProvider.gemini;
+});
 
 /// Whether automatic reporting is enabled.
 ///
@@ -396,7 +406,13 @@ final errorRecoveryEventsProvider =
 /// Creates the full voice-to-terminal pipeline for the given server.
 final voiceSupervisorProvider =
     Provider.family<VoiceSupervisor, String>((ref, serverId) {
-  final tmux = ref.watch(tmuxControllerProvider);
+  // Use pool-based TmuxController for the specific server instead of
+  // the global tmuxControllerProvider (which uses a disconnected SshService).
+  final pool = ref.watch(sshConnectionPoolProvider);
+  final sshService = pool.getConnectionSync(serverId);
+  final tmux = sshService != null
+      ? TmuxController(sshService)
+      : ref.watch(tmuxControllerProvider);
   final sessionSvc = ref.watch(sessionServiceProvider);
   final toolExecutor = ToolExecutor(
     tmux: tmux,
