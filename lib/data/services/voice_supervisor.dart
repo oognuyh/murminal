@@ -439,6 +439,23 @@ class VoiceSupervisor {
       'monitor update about terminal output changes. Summarize the change '
       'concisely and speak it to the user as a status update.',
     );
+    buffer.writeln();
+
+    // Detailed error reporting instructions.
+    buffer.writeln('## Error Reporting');
+    buffer.writeln(
+      'When reporting errors to the user, follow this protocol:\n'
+      '1. State the error briefly (one sentence).\n'
+      '2. Ask: "Would you like more details?"\n'
+      '3. If the user says yes:\n'
+      '   a. Use get_session_status with lines=100 to capture extended context.\n'
+      '   b. Provide a structured summary with:\n'
+      '      - Full error message\n'
+      '      - Likely cause of the error\n'
+      '      - Suggested fix or next steps\n'
+      '      - Relevant file paths mentioned in the output\n'
+      '4. If the user says no, move on to the next task.',
+    );
 
     return buffer.toString();
   }
