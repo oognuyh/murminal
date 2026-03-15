@@ -180,6 +180,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
           value: value,
           validator: validator,
           onChanged: onChanged,
+          isExpanded: true,
           dropdownColor: _surface,
           style: const TextStyle(
             color: _textPrimary,
