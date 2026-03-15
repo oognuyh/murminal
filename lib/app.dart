@@ -36,13 +36,11 @@ class _MurminalAppState extends ConsumerState<MurminalApp> {
     final servers = serverRepo.getAll();
 
     for (final server in servers) {
-      if (server.lastConnectedAt != null) {
-        pool.register(server);
-        try {
-          await pool.getConnection(server.id);
-        } catch (_) {
-          // Connection may fail if server is offline — that's expected.
-        }
+      pool.register(server);
+      try {
+        await pool.getConnection(server.id);
+      } catch (_) {
+        // Connection may fail if server is offline — that's expected.
       }
     }
   }

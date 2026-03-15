@@ -22,7 +22,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// - Proactive audio report injection via client content
 /// - Automatic reconnection with exponential backoff
 class GeminiRealtimeService extends RealtimeVoiceService {
-  static const _defaultModel = 'gemini-2.5-flash-preview-native-audio-dialog';
+  static const _defaultModel = 'gemini-2.5-flash-native-audio-preview-12-2025';
   static const _tag = 'GeminiRealtimeService';
 
   /// Maximum WebSocket reconnection attempts on unexpected disconnect.

@@ -192,7 +192,16 @@ class _VoiceSessionScreenState extends ConsumerState<VoiceSessionScreen>
 
     return Scaffold(
       backgroundColor: _background,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white70),
+          onPressed: _stopVoiceSession,
+        ),
+      ),
       body: SafeArea(
+        top: false,
         child: Column(
           children: [
             // Green active banner with timer.
