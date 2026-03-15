@@ -6,6 +6,7 @@ import UIKit
   private var nowPlayingPlugin: NowPlayingPlugin?
   private var speechRecognitionPlugin: SpeechRecognitionPlugin?
   private var speechSynthesisPlugin: SpeechSynthesisPlugin?
+  private var notificationPlugin: NotificationPlugin?
 
   override func application(
     _ application: UIApplication,
@@ -17,6 +18,7 @@ import UIKit
       nowPlayingPlugin = NowPlayingPlugin(messenger: controller.binaryMessenger)
       speechRecognitionPlugin = SpeechRecognitionPlugin(messenger: controller.binaryMessenger)
       speechSynthesisPlugin = SpeechSynthesisPlugin(messenger: controller.binaryMessenger)
+      notificationPlugin = NotificationPlugin(messenger: controller.binaryMessenger)
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

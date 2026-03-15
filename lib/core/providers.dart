@@ -35,6 +35,9 @@ import 'package:murminal/data/services/voice_supervisor.dart';
 import 'package:murminal/data/services/worktree_service.dart';
 import 'package:murminal/data/models/voice_supervisor_state.dart';
 import 'package:murminal/data/models/error_recovery_event.dart';
+import 'package:murminal/data/models/pattern_match_event.dart';
+import 'package:murminal/data/services/notification_service.dart';
+import 'package:murminal/data/services/pattern_match_service.dart';
 
 /// Singleton [EngineRegistry] for managing engine profiles.
 ///
@@ -411,6 +414,7 @@ final voiceSupervisorProvider =
     serverId: serverId,
     sshPool: ref.watch(sshConnectionPoolProvider),
     errorRecovery: ref.watch(errorRecoveryServiceProvider(serverId)),
+    patternMatchService: ref.watch(patternMatchServiceProvider),
   );
   ref.onDispose(supervisor.dispose);
   return supervisor;
@@ -477,4 +481,42 @@ final bundledProfileNamesProvider = Provider<Set<String>>((ref) {
 final userProfileNamesProvider = Provider<Set<String>>((ref) {
   final repo = ref.watch(engineProfileRepositoryProvider);
   return repo.getAll().map((p) => p.name).toSet();
+});
+
+/// Pattern match service for output monitoring and notifications.
+///
+/// Watches [OutputMonitor] and matches terminal output against engine
+/// profile patterns, emitting [PatternMatchEvent]s for notification
+/// dispatch and voice announcements.
+final patternMatchServiceProvider = Provider<PatternMatchService>((ref) {
+  final monitor = ref.watch(outputMonitorProvider);
+  final service = PatternMatchService(monitor);
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+/// Stream of pattern match events for UI binding.
+final patternMatchEventsProvider = StreamProvider<PatternMatchEvent>((ref) {
+  final service = ref.watch(patternMatchServiceProvider);
+  return service.matches;
+});
+
+/// Notification service for iOS local notifications.
+///
+/// Bridges Flutter with UNUserNotificationCenter via a platform channel.
+/// Posts notifications when pattern matches are detected and forwards
+/// notification tap events for session navigation.
+final notificationServiceProvider = Provider<NotificationService>((ref) {
+  final service = NotificationService();
+  ref.onDispose(service.dispose);
+  return service;
+});
+
+/// Stream of session names from notification taps.
+///
+/// Used by the router to navigate to the relevant session when
+/// the user taps a pattern match notification.
+final notificationTapProvider = StreamProvider<String>((ref) {
+  final service = ref.watch(notificationServiceProvider);
+  return service.onNotificationTap;
 });

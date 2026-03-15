@@ -9,11 +9,13 @@ import 'package:murminal/data/models/tool_definition.dart';
 import 'package:murminal/data/models/voice_event.dart';
 import 'package:murminal/data/models/voice_supervisor_state.dart';
 import 'package:murminal/data/models/error_recovery_event.dart';
+import 'package:murminal/data/models/pattern_match_event.dart';
 import 'package:murminal/data/services/audio_session_service.dart';
 import 'package:murminal/data/services/error_recovery_service.dart';
 import 'package:murminal/data/services/mic_service.dart';
 import 'package:murminal/data/services/output_monitor.dart';
 import 'package:murminal/data/services/pattern_detector.dart';
+import 'package:murminal/data/services/pattern_match_service.dart';
 import 'package:murminal/data/services/report_generator.dart';
 import 'package:murminal/data/services/session_service.dart';
 import 'package:murminal/data/services/ssh_connection_pool.dart';
@@ -49,6 +51,7 @@ class VoiceSupervisor {
   final ToolExecutor _toolExecutor;
   final SshConnectionPool? _sshPool;
   final ErrorRecoveryService? _errorRecovery;
+  final PatternMatchService? _patternMatchService;
 
   /// Whether this supervisor is using the local STT/TTS pipeline.
   bool _useLocal = false;
@@ -66,6 +69,7 @@ class VoiceSupervisor {
   StreamSubscription<AudioSessionState>? _audioStateSub;
   StreamSubscription<SshReconnectionEvent>? _reconnectSub;
   StreamSubscription<ErrorRecoveryEvent>? _errorRecoverySub;
+  StreamSubscription<PatternMatchEvent>? _patternMatchSub;
 
   /// Cached API key for WebSocket reconnection after audio interruption.
   String? _apiKey;
@@ -89,6 +93,7 @@ class VoiceSupervisor {
     PatternDetector? patternDetector,
     ReportGenerator? reportGenerator,
     ErrorRecoveryService? errorRecovery,
+    PatternMatchService? patternMatchService,
   })  : _voiceService = voiceService,
         _localVoiceService = localVoiceService,
         _audioSession = audioSession,
@@ -99,7 +104,8 @@ class VoiceSupervisor {
         _reportGenerator = reportGenerator,
         _toolExecutor = toolExecutor,
         _sshPool = sshPool,
-        _errorRecovery = errorRecovery;
+        _errorRecovery = errorRecovery,
+        _patternMatchService = patternMatchService;
 
   /// Stream of supervisor state changes for UI binding.
   Stream<VoiceSupervisorState> get state => _stateController.stream;
@@ -296,6 +302,14 @@ class VoiceSupervisor {
             _errorRecovery.events.listen(_handleErrorRecoveryEvent);
       }
 
+      // 10. Subscribe to pattern match events for voice announcements.
+      _patternMatchSub?.cancel();
+      if (_patternMatchService != null) {
+        _patternMatchService.start();
+        _patternMatchSub =
+            _patternMatchService.matches.listen(_handlePatternMatch);
+      }
+
       _setState(VoiceSupervisorState.listening);
       developer.log(
         'Pipeline started (${_useLocal ? "local" : "realtime"})',
@@ -324,7 +338,9 @@ class VoiceSupervisor {
     _audioStateSub?.cancel();
     _reconnectSub?.cancel();
     _errorRecoverySub?.cancel();
+    _patternMatchSub?.cancel();
     _errorRecovery?.dispose();
+    _patternMatchService?.stop();
     _localVoiceService?.dispose();
     _stateController.close();
   }
@@ -634,6 +650,30 @@ class VoiceSupervisor {
   }
 
   // ---------------------------------------------------------------------------
+  // Pattern match voice announcements
+  // ---------------------------------------------------------------------------
+
+  /// Handles pattern match events from [PatternMatchService].
+  ///
+  /// Announces reportable pattern matches via voice so the user hears
+  /// about errors, completions, and input prompts hands-free.
+  void _handlePatternMatch(PatternMatchEvent event) {
+    if (_currentState == VoiceSupervisorState.idle ||
+        _currentState == VoiceSupervisorState.error) {
+      return;
+    }
+
+    if (!event.shouldReport) return;
+
+    _injectReport(event.reportText);
+    developer.log(
+      'Voice announced pattern match: ${event.detectedState.type.name} '
+      'for session "${event.sessionName}"',
+      name: _tag,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Proactive output reporting
   // ---------------------------------------------------------------------------
 
@@ -828,6 +868,10 @@ class VoiceSupervisor {
     _errorRecoverySub?.cancel();
     _errorRecoverySub = null;
     _errorRecovery?.stopMonitoring();
+
+    _patternMatchSub?.cancel();
+    _patternMatchSub = null;
+    _patternMatchService?.stop();
 
     _apiKey = null;
     _preInterruptionState = null;
