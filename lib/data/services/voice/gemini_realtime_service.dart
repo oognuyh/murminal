@@ -213,11 +213,11 @@ class GeminiRealtimeService extends RealtimeVoiceService {
     _subscription = _channel?.stream.listen(
       _onMessage,
       onError: (Object error) {
-        developer.log('WebSocket error: $error', name: _tag);
+        debugPrint('Gemini WebSocket error: $error');
         _eventController.add(VoiceError('WebSocket error: $error'));
       },
       onDone: () {
-        developer.log('WebSocket closed', name: _tag);
+        debugPrint('Gemini WebSocket closed');
         if (_connected) {
           _reconnect();
         }
@@ -351,9 +351,19 @@ class GeminiRealtimeService extends RealtimeVoiceService {
   void _send(Map<String, dynamic> message) {
     final channel = _channel;
     if (channel == null) {
-      developer.log('Cannot send — not connected', name: _tag);
+      debugPrint('Gemini: Cannot send — not connected');
       return;
     }
-    channel.sink.add(jsonEncode(message));
+    final json = jsonEncode(message);
+    // Log setup messages in full, others abbreviated.
+    if (message.containsKey('setup')) {
+      debugPrint('Gemini → setup: ${json.length} bytes');
+      debugPrint('Gemini → $json');
+    } else if (!message.containsKey('realtimeInput')) {
+      // Skip logging audio chunks (too noisy).
+      final preview = json.length > 150 ? '${json.substring(0, 150)}...' : json;
+      debugPrint('Gemini → $preview');
+    }
+    channel.sink.add(json);
   }
 }
