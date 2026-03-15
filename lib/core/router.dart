@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:murminal/data/models/server_config.dart';
+import 'package:murminal/data/repositories/server_repository.dart';
 import 'package:murminal/ui/home/home_view.dart';
+import 'package:murminal/ui/screens/add_server_screen.dart';
 import 'package:murminal/ui/screens/session_detail_screen.dart';
 import 'package:murminal/ui/servers/server_list_view.dart';
 import 'package:murminal/ui/sessions/session_list_view.dart';
@@ -15,6 +18,7 @@ abstract final class AppRoutes {
   static const sessions = '/sessions';
   static const settings = '/settings';
   static const sessionDetail = '/sessions/:sessionId';
+  static const addServer = '/servers/add';
 }
 
 /// Maps route location to tab index.
@@ -56,6 +60,17 @@ final router = GoRouter(
         return SessionDetailScreen(
           sessionId: sessionId,
           sessionName: sessionName,
+        );
+      },
+    ),
+    GoRoute(
+      path: AppRoutes.addServer,
+      parentNavigatorKey: _rootNavigatorKey,
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        return AddServerScreen(
+          repository: extra!['repository'] as ServerRepository,
+          existingConfig: extra['existingConfig'] as ServerConfig?,
         );
       },
     ),

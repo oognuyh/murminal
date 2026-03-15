@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:murminal/core/providers.dart';
+import 'package:murminal/core/router.dart';
 import 'package:murminal/data/models/server_config.dart';
-import 'package:murminal/ui/screens/add_server_screen.dart';
 
 /// Theme colors matching the app's dark slate design.
 const _background = Color(0xFF0A0F1C);
@@ -48,10 +49,9 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
   /// Navigate to the add server screen and refresh list on return.
   Future<void> _navigateToAddServer() async {
     final repository = ref.read(serverRepositoryProvider);
-    final result = await Navigator.of(context).push<ServerConfig>(
-      MaterialPageRoute(
-        builder: (_) => AddServerScreen(repository: repository),
-      ),
+    final result = await context.push<ServerConfig>(
+      AppRoutes.addServer,
+      extra: <String, dynamic>{'repository': repository},
     );
     if (result != null) {
       ref.invalidate(serverListProvider);
@@ -61,13 +61,12 @@ class _ServerListViewState extends ConsumerState<ServerListView> {
   /// Navigate to edit an existing server and refresh list on return.
   Future<void> _navigateToEditServer(ServerConfig config) async {
     final repository = ref.read(serverRepositoryProvider);
-    final result = await Navigator.of(context).push<ServerConfig>(
-      MaterialPageRoute(
-        builder: (_) => AddServerScreen(
-          repository: repository,
-          existingConfig: config,
-        ),
-      ),
+    final result = await context.push<ServerConfig>(
+      AppRoutes.addServer,
+      extra: <String, dynamic>{
+        'repository': repository,
+        'existingConfig': config,
+      },
     );
     if (result != null) {
       ref.invalidate(serverListProvider);
