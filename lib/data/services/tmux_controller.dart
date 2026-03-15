@@ -33,7 +33,7 @@ class TmuxController {
   /// Check whether tmux is installed on the remote host.
   Future<bool> checkTmuxInstalled() async {
     try {
-      final output = await _ssh.execute('which tmux');
+      final output = await _ssh.execute('which tmux', throwOnError: false);
       return output.trim().isNotEmpty;
     } catch (_) {
       return false;
@@ -45,9 +45,14 @@ class TmuxController {
   /// Optionally runs [command] inside the session after creation.
   /// Throws [TmuxNotInstalledException] if tmux is not available.
   /// Throws [TmuxCommandException] if session creation fails.
-  Future<void> createSession(String name, {String? command}) async {
+  Future<void> createSession(
+    String name, {
+    String? command,
+    int cols = 80,
+    int rows = 24,
+  }) async {
     final fullName = '$sessionPrefix$name';
-    final createCmd = 'tmux new-session -d -s "$fullName"';
+    final createCmd = 'tmux new-session -d -s "$fullName" -x $cols -y $rows';
 
     try {
       await _ssh.execute(createCmd);
@@ -81,6 +86,22 @@ class TmuxController {
     }
   }
 
+  /// Resize the tmux session to match the app's terminal view.
+  ///
+  /// For detached sessions, forces the window size by setting
+  /// window-size to manual and resizing window + pane.
+  Future<void> resizeWindow(String name, int cols, int rows) async {
+    final fullName = '$sessionPrefix$name';
+    final cmd = 'tmux set -t "$fullName" window-size manual 2>/dev/null; '
+        'tmux resize-window -t "$fullName" -x $cols -y $rows 2>/dev/null; '
+        'tmux resize-pane -t "$fullName" -x $cols -y $rows 2>/dev/null';
+    try {
+      await _ssh.execute(cmd, throwOnError: false);
+    } catch (_) {
+      // Best-effort resize.
+    }
+  }
+
   /// List all Murminal-managed tmux sessions.
   ///
   /// Only returns sessions whose names start with [sessionPrefix].
@@ -91,6 +112,7 @@ class TmuxController {
         'tmux list-sessions -F '
         '"#{session_name}|#{session_created}|#{session_attached}|#{session_activity}" '
         '2>/dev/null',
+        throwOnError: false,
       );
       return _parseSessions(output);
     } catch (_) {
@@ -108,7 +130,7 @@ class TmuxController {
     final cmd = 'tmux send-keys -t "$fullName" "$escaped" Enter';
 
     try {
-      await _ssh.execute(cmd);
+      await _ssh.execute(cmd, throwOnError: false);
     } catch (e) {
       throw TmuxCommandException(
         command: cmd,
@@ -127,7 +149,7 @@ class TmuxController {
     final cmd = 'tmux send-keys -t "$fullName" $keys';
 
     try {
-      await _ssh.execute(cmd);
+      await _ssh.execute(cmd, throwOnError: false);
     } catch (e) {
       throw TmuxCommandException(
         command: cmd,
@@ -142,10 +164,12 @@ class TmuxController {
   /// Returns the captured text. Throws [TmuxCommandException] on failure.
   Future<String> capturePane(String session, {int lines = 50}) async {
     final fullName = '$sessionPrefix$session';
-    final cmd = 'tmux capture-pane -t "$fullName" -p -S -$lines';
+    // -e preserves ANSI escape sequences so xterm can render colors
+    // and cursor positioning correctly.
+    final cmd = 'tmux capture-pane -t "$fullName" -p -e -S -$lines';
 
     try {
-      return await _ssh.execute(cmd);
+      return await _ssh.execute(cmd, throwOnError: false);
     } catch (e) {
       throw TmuxCommandException(
         command: cmd,
@@ -227,7 +251,7 @@ class TmuxController {
 
     final cmd = buffer.toString();
     try {
-      final rawOutput = await _ssh.execute(cmd);
+      final rawOutput = await _ssh.execute(cmd, throwOnError: false);
       return _parseBatchOutput(sessions, rawOutput);
     } catch (e) {
       throw TmuxCommandException(

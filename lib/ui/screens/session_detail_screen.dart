@@ -6,6 +6,7 @@ import 'package:xterm/xterm.dart';
 
 import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/services/ssh_service.dart' as ssh;
+import 'package:murminal/data/services/tmux_controller.dart';
 import 'package:murminal/ui/widgets/ssh_reconnection_banner.dart';
 
 /// Theme colors matching the app's dark slate design.
@@ -102,8 +103,48 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     _terminal = Terminal(maxLines: _defaultScrollbackLines);
     _inputController = TextEditingController();
     _inputFocusNode = FocusNode();
+    _initAndStartPolling();
+  }
+
+  /// Resolve the session's server ID and create a TmuxController
+  /// from the connection pool, then start polling.
+  Future<void> _initAndStartPolling() async {
+    final sessionService = ref.read(sessionServiceProvider);
+    final session = sessionService.getSession(widget.sessionId);
+
+    if (session != null) {
+      final pool = ref.read(sshConnectionPoolProvider);
+
+      // Re-register the server config from persistent storage if the
+      // pool lost it (e.g. after app restart).
+      if (!pool.isConnected(session.serverId)) {
+        final serverRepo = ref.read(serverRepositoryProvider);
+        final serverConfig = serverRepo.getById(session.serverId);
+        if (serverConfig != null) {
+          pool.register(serverConfig);
+        }
+      }
+
+      try {
+        final sshConn = await pool.getConnection(session.serverId);
+        _poolTmux = TmuxController(sshConn);
+        // Resize tmux to match screen after first frame.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _resizeTmux();
+        });
+      } catch (e) {
+        debugPrint('SSH connection failed: $e');
+      }
+    }
     _startPolling();
   }
+
+  /// TmuxController using the pooled SSH connection for this session's server.
+  /// Falls back to the global tmuxControllerProvider if not resolved.
+  TmuxController? _poolTmux;
+
+  TmuxController get _tmux =>
+      _poolTmux ?? ref.read(tmuxControllerProvider);
 
   @override
   void dispose() {
@@ -111,6 +152,22 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     _inputController.dispose();
     _inputFocusNode.dispose();
     super.dispose();
+  }
+
+  /// Resize the remote tmux session to match the terminal view dimensions.
+  ///
+  /// Calculates columns and rows from the screen width and a fixed
+  /// character size based on the terminal font.
+  Future<void> _resizeTmux() async {
+    if (_poolTmux == null) return;
+    final screenWidth = MediaQuery.of(context).size.width - 16; // padding
+    final screenHeight = MediaQuery.of(context).size.height * 0.6;
+    // Approximate character dimensions for JetBrains Mono 12pt.
+    const charWidth = 7.2;
+    const charHeight = 16.0;
+    final cols = (screenWidth / charWidth).floor().clamp(20, 300);
+    final rows = (screenHeight / charHeight).floor().clamp(10, 100);
+    await _poolTmux!.resizeWindow(widget.sessionId, cols, rows);
   }
 
   /// Start polling tmux capture-pane for terminal output.
@@ -122,7 +179,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   /// Fetch the latest tmux pane content and write new output to the terminal.
   Future<void> _captureOutput() async {
     try {
-      final tmux = ref.read(tmuxControllerProvider);
+      final tmux = _tmux;
       final output = await tmux.capturePane(
         widget.sessionId,
         lines: _captureLines,
@@ -130,12 +187,11 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
 
       if (output == _lastOutput) return;
 
-      _terminal.eraseDisplay();
-      _terminal.setCursor(0, 0);
-      _terminal.write(output);
+      // Use ANSI escape sequences to clear and rewrite the terminal.
+      _terminal.write('\x1b[2J\x1b[H$output');
       _lastOutput = output;
-    } catch (_) {
-      // Silently ignore capture failures (session may have ended).
+    } catch (e) {
+      debugPrint('capturePane error: $e');
     }
   }
 
@@ -144,10 +200,10 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
     final text = _inputController.text;
     if (text.isEmpty) return;
 
+    _inputController.clear();
     try {
-      final tmux = ref.read(tmuxControllerProvider);
+      final tmux = _tmux;
       await tmux.sendKeys(widget.sessionId, text);
-      _inputController.clear();
       // Trigger an immediate capture to show the result.
       _captureOutput();
     } catch (_) {
@@ -158,7 +214,7 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
   /// Send a special key to tmux without appending Enter.
   Future<void> _sendSpecialKey(String key) async {
     try {
-      final tmux = ref.read(tmuxControllerProvider);
+      final tmux = _tmux;
       await tmux.sendRawKeys(widget.sessionId, key);
       _captureOutput();
     } catch (_) {

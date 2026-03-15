@@ -165,8 +165,11 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     }
   }
 
-  /// Attempt to auto-install tmux on the connected server.
+  /// Show password dialog, then install tmux with sudo -S.
   Future<void> _installTmux() async {
+    final password = await _showSudoPasswordDialog();
+    if (password == null) return;
+
     final server = _selectedServer;
     final result = _tmuxCheckResult;
     if (server == null || result == null) return;
@@ -181,10 +184,12 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     try {
       final ssh = await pool.getConnection(server.id);
       final installService = TmuxInstallService(ssh);
-      final success = await installService.installTmux(result.osType);
+      final success = await installService.installTmux(
+        result.osType,
+        password: password,
+      );
 
       if (success) {
-        // Clear cached status and re-check to get version info.
         pool.clearTmuxStatus(server.id);
         if (mounted) {
           setState(() => _isInstallingTmux = false);
@@ -214,6 +219,50 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
         });
       }
     }
+  }
+
+  /// Prompt user for sudo password.
+  ///
+  /// Returns the entered password, or null if cancelled.
+  Future<String?> _showSudoPasswordDialog() {
+    String value = '';
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2E),
+        title: const Text(
+          'sudo password',
+          style: TextStyle(color: Colors.white, fontSize: 16),
+        ),
+        content: TextField(
+          obscureText: true,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          decoration: const InputDecoration(
+            hintText: 'Enter server password',
+            hintStyle: TextStyle(color: Colors.white38),
+            enabledBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Colors.white24),
+            ),
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: Color(0xFF89B4FA)),
+            ),
+          ),
+          onChanged: (text) => value = text,
+          onSubmitted: (text) => Navigator.of(ctx).pop(text),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(value),
+            child: const Text('Install'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Handle server selection change.

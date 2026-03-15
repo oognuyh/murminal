@@ -41,6 +41,24 @@ class SshReconnectionEvent {
   });
 }
 
+/// Exception thrown when a remote SSH command exits with a non-zero code.
+class SshCommandException implements Exception {
+  final String command;
+  final int exitCode;
+  final String stderr;
+
+  const SshCommandException({
+    required this.command,
+    required this.exitCode,
+    required this.stderr,
+  });
+
+  @override
+  String toString() =>
+      'SshCommandException: "$command" exited with code $exitCode'
+      '${stderr.isNotEmpty ? '\n$stderr' : ''}';
+}
+
 /// SSH client service wrapping dartssh2.
 ///
 /// Manages a single SSH connection with automatic reconnection support
@@ -123,7 +141,15 @@ class SshService {
   }
 
   /// Execute a remote command and return its stdout output.
-  Future<String> execute(String command) async {
+  ///
+  /// When [throwOnError] is true (the default), throws
+  /// [SshCommandException] if the command exits with a non-zero code.
+  /// Set to false for commands where non-zero exit is expected
+  /// (e.g., `which`, `tmux list-sessions` with no sessions).
+  Future<String> execute(
+    String command, {
+    bool throwOnError = true,
+  }) async {
     final client = _client;
     if (client == null || !isConnected) {
       throw StateError('SSH client is not connected');
@@ -132,8 +158,61 @@ class SshService {
     final session = await client.execute(command);
     final stdout = await utf8.decodeStream(session.stdout);
     // Consume stderr to avoid blocking.
-    await utf8.decodeStream(session.stderr);
+    final stderr = await utf8.decodeStream(session.stderr);
+    await session.done;
     session.close();
+
+    final exitCode = session.exitCode;
+    if (throwOnError && exitCode != null && exitCode != 0) {
+      throw SshCommandException(
+        command: command,
+        exitCode: exitCode,
+        stderr: stderr,
+      );
+    }
+
+    return stdout;
+  }
+
+  /// Execute a remote command, piping [stdinData] to its stdin.
+  ///
+  /// Useful for commands that read from stdin, such as `sudo -S`.
+  /// Starts consuming stdout/stderr before writing stdin to avoid
+  /// deadlocks when the remote process writes before reading.
+  Future<String> executeWithStdin(
+    String command, {
+    required String stdinData,
+  }) async {
+    final client = _client;
+    if (client == null || !isConnected) {
+      throw StateError('SSH client is not connected');
+    }
+
+    final session = await client.execute(command);
+
+    // Start consuming output streams before writing stdin to prevent
+    // deadlock — sudo writes a prompt to stderr before reading stdin.
+    final stdoutFuture = utf8.decodeStream(session.stdout);
+    final stderrFuture = utf8.decodeStream(session.stderr);
+
+    // Write password and close stdin.
+    session.stdin.add(utf8.encode('$stdinData\n'));
+    await session.stdin.close();
+
+    final stdout = await stdoutFuture;
+    final stderr = await stderrFuture;
+    await session.done;
+    session.close();
+
+    final exitCode = session.exitCode;
+    if (exitCode != null && exitCode != 0) {
+      throw SshCommandException(
+        command: command,
+        exitCode: exitCode,
+        stderr: stderr,
+      );
+    }
+
     return stdout;
   }
 

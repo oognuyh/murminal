@@ -321,15 +321,15 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
     });
 
     try {
-      final storage = ref.read(secureStorageProvider);
-      final storedKey = await storage.read(key: provider.storageKey);
-      // Verify the key is saved and readable.
-      final success = storedKey != null && storedKey == key;
+      // Actually test the WebSocket connection to the voice API.
+      final service = ref.read(realtimeVoiceServiceProvider);
+      await service.connect(key);
+      // If connect() doesn't throw, the WebSocket handshake succeeded.
+      await service.disconnect();
+
       if (mounted) {
         setState(() {
-          _testStatus[provider] = success
-              ? _ConnectionTestStatus.success
-              : _ConnectionTestStatus.failure;
+          _testStatus[provider] = _ConnectionTestStatus.success;
         });
       }
     } catch (_) {

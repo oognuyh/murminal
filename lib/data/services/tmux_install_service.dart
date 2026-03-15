@@ -54,7 +54,7 @@ class TmuxInstallService {
     final osType = await detectOsType();
 
     try {
-      final output = await _ssh.execute('tmux -V');
+      final output = await _ssh.execute('tmux -V', throwOnError: false);
       final version = output.trim();
       if (version.isNotEmpty) {
         return TmuxCheckResult(
@@ -64,7 +64,7 @@ class TmuxInstallService {
         );
       }
     } catch (_) {
-      // tmux not found or command failed.
+      // tmux not found or command exited non-zero.
     }
 
     return TmuxCheckResult(
@@ -76,7 +76,7 @@ class TmuxInstallService {
   /// Detect the operating system type on the remote host.
   Future<RemoteOsType> detectOsType() async {
     try {
-      final uname = await _ssh.execute('uname -s');
+      final uname = await _ssh.execute('uname -s', throwOnError: false);
       final system = uname.trim().toLowerCase();
 
       if (system == 'darwin') {
@@ -96,7 +96,7 @@ class TmuxInstallService {
   /// Detect the specific Linux distribution.
   Future<RemoteOsType> _detectLinuxDistro() async {
     try {
-      final release = await _ssh.execute('cat /etc/os-release 2>/dev/null');
+      final release = await _ssh.execute('cat /etc/os-release 2>/dev/null', throwOnError: false);
       final lower = release.toLowerCase();
 
       if (lower.contains('alpine')) {
@@ -121,17 +121,17 @@ class TmuxInstallService {
 
     // Fallback: check for package managers.
     try {
-      final aptCheck = await _ssh.execute('which apt-get 2>/dev/null');
+      final aptCheck = await _ssh.execute('which apt-get 2>/dev/null', throwOnError: false);
       if (aptCheck.trim().isNotEmpty) return RemoteOsType.debian;
     } catch (_) {}
 
     try {
-      final yumCheck = await _ssh.execute('which yum 2>/dev/null');
+      final yumCheck = await _ssh.execute('which yum 2>/dev/null', throwOnError: false);
       if (yumCheck.trim().isNotEmpty) return RemoteOsType.redhat;
     } catch (_) {}
 
     try {
-      final apkCheck = await _ssh.execute('which apk 2>/dev/null');
+      final apkCheck = await _ssh.execute('which apk 2>/dev/null', throwOnError: false);
       if (apkCheck.trim().isNotEmpty) return RemoteOsType.alpine;
     } catch (_) {}
 
@@ -140,15 +140,25 @@ class TmuxInstallService {
 
   /// Get the install command for the detected OS type.
   ///
+  /// When [useSudoS] is true, uses `sudo -S` which reads the password
+  /// from stdin instead of requiring a terminal.
   /// Returns null if the OS type is unknown.
-  static String? getInstallCommand(RemoteOsType osType) {
+  static String? getInstallCommand(
+    RemoteOsType osType, {
+    bool useSudoS = false,
+  }) {
+    // Use sudo -S with SUDO_PROMPT="" to suppress prompt and read
+    // password from stdin. The -k flag resets cached credentials to
+    // ensure the password is always read from stdin.
+    final sudo = useSudoS ? 'SUDO_ASKPASS=/bin/false sudo -S' : 'sudo';
     switch (osType) {
       case RemoteOsType.debian:
-        return 'sudo apt-get update && sudo apt-get install -y tmux';
+        // Single sudo invocation to avoid needing password twice.
+        return '$sudo sh -c "apt-get update && apt-get install -y tmux"';
       case RemoteOsType.redhat:
-        return 'sudo yum install -y tmux';
+        return '$sudo yum install -y tmux';
       case RemoteOsType.alpine:
-        return 'sudo apk add tmux';
+        return '$sudo apk add tmux';
       case RemoteOsType.macos:
         return 'brew install tmux';
       case RemoteOsType.unknown:
@@ -174,12 +184,22 @@ class TmuxInstallService {
 
   /// Attempt to auto-install tmux on the remote host.
   ///
+  /// When [password] is provided, uses `sudo -S` to pipe the password
+  /// via stdin, avoiding the "a terminal is required" error.
+  ///
   /// Returns true if installation succeeded (tmux is available
   /// after running the install command).
   /// Throws [TmuxInstallException] if the OS is not supported
   /// or the install command fails.
-  Future<bool> installTmux(RemoteOsType osType) async {
-    final command = getInstallCommand(osType);
+  Future<bool> installTmux(
+    RemoteOsType osType, {
+    String? password,
+  }) async {
+    final needsSudo = osType != RemoteOsType.macos;
+    final command = getInstallCommand(
+      osType,
+      useSudoS: needsSudo && password != null,
+    );
     if (command == null) {
       throw TmuxInstallException(
         'Cannot auto-install tmux: unsupported operating system',
@@ -187,20 +207,31 @@ class TmuxInstallService {
     }
 
     try {
-      await _ssh.execute(command);
+      if (needsSudo && password != null) {
+        await _ssh.executeWithStdin(command, stdinData: password);
+      } else {
+        await _ssh.execute(command);
+      }
+    } on SshCommandException catch (e) {
+      final msg = e.stderr.trim();
+      if (msg.contains('sudo') && msg.contains('password')) {
+        throw TmuxInstallException(
+          'sudo password required',
+        );
+      }
+      throw TmuxInstallException(
+        'Install command failed (exit code ${e.exitCode})'
+        '${msg.isNotEmpty ? ': $msg' : ''}',
+      );
     } catch (e) {
       throw TmuxInstallException(
         'Failed to install tmux: $e',
       );
     }
 
-    // Verify installation succeeded.
-    try {
-      final output = await _ssh.execute('tmux -V');
-      return output.trim().isNotEmpty;
-    } catch (_) {
-      return false;
-    }
+    // Verify installation succeeded by checking tmux is now available.
+    final result = await checkTmux();
+    return result.isInstalled;
   }
 }
 
