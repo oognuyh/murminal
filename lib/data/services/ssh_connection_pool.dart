@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:murminal/data/models/server_config.dart';
 import 'package:murminal/data/services/ssh_service.dart';
@@ -7,9 +8,12 @@ import 'package:murminal/data/services/tmux_install_service.dart';
 /// Manages a pool of SSH connections across multiple servers.
 ///
 /// Supports lazy connection (connect on first use), periodic health checks,
-/// and enforces a maximum connection limit per server.
+/// automatic reconnection with exponential backoff, and enforces a maximum
+/// connection limit per server.
 /// Tracks tmux availability per server to avoid redundant checks.
 class SshConnectionPool {
+  static const _tag = 'SshConnectionPool';
+
   /// Maximum number of concurrent connections allowed per server.
   static const int maxConnectionsPerServer = 5;
 
@@ -28,6 +32,13 @@ class SshConnectionPool {
   final _stateController =
       StreamController<Map<String, ConnectionState>>.broadcast();
 
+  final _reconnectionController =
+      StreamController<SshReconnectionEvent>.broadcast();
+
+  /// Subscriptions to individual service reconnection events.
+  final Map<String, StreamSubscription<SshReconnectionEvent>> _reconnectSubs =
+      {};
+
   Timer? _healthCheckTimer;
   bool _disposed = false;
 
@@ -41,6 +52,13 @@ class SshConnectionPool {
   Stream<Map<String, ConnectionState>> get connectionStates =>
       _stateController.stream;
 
+  /// Stream of reconnection events from all pooled connections.
+  ///
+  /// The UI and voice layers subscribe to this to show reconnection
+  /// banners and speak "Connection lost, reconnecting..." notifications.
+  Stream<SshReconnectionEvent> get reconnectionEvents =>
+      _reconnectionController.stream;
+
   /// Current connection states for all registered servers.
   Map<String, ConnectionState> get currentStates {
     return {
@@ -53,6 +71,12 @@ class SshConnectionPool {
   bool isConnected(String serverId) {
     final service = _connections[serverId];
     return service != null && service.isConnected;
+  }
+
+  /// Whether the connection for [serverId] is currently reconnecting.
+  bool isReconnecting(String serverId) {
+    final service = _connections[serverId];
+    return service != null && service.isReconnecting;
   }
 
   /// Get the cached tmux check result for [serverId].
@@ -123,6 +147,8 @@ class SshConnectionPool {
   Future<void> disconnect(String serverId) async {
     final service = _connections.remove(serverId);
     _connectionCounts.remove(serverId);
+    _reconnectSubs[serverId]?.cancel();
+    _reconnectSubs.remove(serverId);
     _tmuxStatus.remove(serverId);
 
     if (service != null) {
@@ -142,6 +168,10 @@ class SshConnectionPool {
     }
     await Future.wait(futures);
 
+    for (final sub in _reconnectSubs.values) {
+      sub.cancel();
+    }
+    _reconnectSubs.clear();
     _connections.clear();
     _connectionCounts.clear();
     _emitStates();
@@ -153,6 +183,11 @@ class SshConnectionPool {
     _disposed = true;
     _stopHealthChecks();
 
+    for (final sub in _reconnectSubs.values) {
+      sub.cancel();
+    }
+    _reconnectSubs.clear();
+
     for (final service in _connections.values) {
       service.dispose();
     }
@@ -161,6 +196,7 @@ class SshConnectionPool {
     _connectionCounts.clear();
     _tmuxStatus.clear();
     _stateController.close();
+    _reconnectionController.close();
   }
 
   Future<SshService> _connectServer(ServerConfig config) async {
@@ -182,6 +218,8 @@ class SshConnectionPool {
 
     // Dispose old service if it exists but is disconnected.
     if (existing != null) {
+      _reconnectSubs[config.id]?.cancel();
+      _reconnectSubs.remove(config.id);
       existing.dispose();
     }
 
@@ -189,6 +227,19 @@ class SshConnectionPool {
 
     // Forward individual connection state changes to the pool stream.
     service.connectionState.listen((_) => _emitStates());
+
+    // Forward reconnection events to the pool-level stream.
+    _reconnectSubs[config.id] = service.reconnectionEvents.listen((event) {
+      developer.log(
+        'Reconnection event for ${config.id}: '
+        'attempt ${event.attempt}/${event.maxAttempts}, '
+        'succeeded: ${event.succeeded}',
+        name: _tag,
+      );
+      if (!_disposed) {
+        _reconnectionController.add(event);
+      }
+    });
 
     _connections[config.id] = service;
     _connectionCounts[config.id] = count + 1;
@@ -214,6 +265,7 @@ class SshConnectionPool {
   /// Check health of all connections by attempting a lightweight command.
   ///
   /// Disconnected connections with a registered config are reconnected.
+  /// Connections that are already reconnecting are skipped.
   Future<void> _performHealthChecks() async {
     if (_disposed) return;
 
@@ -221,7 +273,7 @@ class SshConnectionPool {
       final serverId = entry.key;
       final service = entry.value;
 
-      if (!service.isConnected) {
+      if (!service.isConnected && !service.isReconnecting) {
         final config = _configs[serverId];
         if (config != null) {
           try {

@@ -128,6 +128,16 @@ final poolConnectionStatesProvider =
   return pool.connectionStates;
 });
 
+/// Stream of SSH reconnection events from all pooled connections.
+///
+/// Used by the UI to display reconnection banners and by the voice
+/// supervisor to speak "Connection lost, reconnecting..." notifications.
+final sshReconnectionEventsProvider =
+    StreamProvider<SshReconnectionEvent>((ref) {
+  final pool = ref.watch(sshConnectionPoolProvider);
+  return pool.reconnectionEvents;
+});
+
 /// SSH service provider. One instance per server connection.
 ///
 /// @deprecated Prefer [sshConnectionPoolProvider] for per-server connections.
@@ -266,6 +276,7 @@ final voiceSupervisorProvider =
     outputMonitor: ref.watch(outputMonitorProvider),
     toolExecutor: toolExecutor,
     serverId: serverId,
+    sshPool: ref.watch(sshConnectionPoolProvider),
   );
   ref.onDispose(supervisor.dispose);
   return supervisor;

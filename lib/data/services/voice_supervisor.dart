@@ -14,6 +14,8 @@ import 'package:murminal/data/services/output_monitor.dart';
 import 'package:murminal/data/services/pattern_detector.dart';
 import 'package:murminal/data/services/report_generator.dart';
 import 'package:murminal/data/services/session_service.dart';
+import 'package:murminal/data/services/ssh_connection_pool.dart';
+import 'package:murminal/data/services/ssh_service.dart';
 import 'package:murminal/data/services/tool_executor.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
 
@@ -41,6 +43,7 @@ class VoiceSupervisor {
   final PatternDetector? _patternDetector;
   final ReportGenerator? _reportGenerator;
   final ToolExecutor _toolExecutor;
+  final SshConnectionPool? _sshPool;
 
   /// The server ID this supervisor is operating against.
   final String serverId;
@@ -53,12 +56,16 @@ class VoiceSupervisor {
   StreamSubscription<Uint8List>? _micSub;
   StreamSubscription<OutputChangeEvent>? _outputSub;
   StreamSubscription<AudioSessionState>? _audioStateSub;
+  StreamSubscription<SshReconnectionEvent>? _reconnectSub;
 
   /// Cached API key for WebSocket reconnection after audio interruption.
   String? _apiKey;
 
   /// The supervisor state before an interruption, used to restore after resume.
   VoiceSupervisorState? _preInterruptionState;
+
+  /// Tracks whether we already announced connection loss for this cycle.
+  bool _announcedConnectionLoss = false;
 
   VoiceSupervisor({
     required RealtimeVoiceService voiceService,
@@ -68,6 +75,7 @@ class VoiceSupervisor {
     required OutputMonitor outputMonitor,
     required ToolExecutor toolExecutor,
     required this.serverId,
+    SshConnectionPool? sshPool,
     PatternDetector? patternDetector,
     ReportGenerator? reportGenerator,
   })  : _voiceService = voiceService,
@@ -77,7 +85,8 @@ class VoiceSupervisor {
         _outputMonitor = outputMonitor,
         _patternDetector = patternDetector,
         _reportGenerator = reportGenerator,
-        _toolExecutor = toolExecutor;
+        _toolExecutor = toolExecutor,
+        _sshPool = sshPool;
 
   /// Stream of supervisor state changes for UI binding.
   Stream<VoiceSupervisorState> get state => _stateController.stream;
@@ -241,6 +250,13 @@ class VoiceSupervisor {
       // 7. Subscribe to output monitor for proactive reporting.
       _outputSub = _outputMonitor.changes.listen(_onOutputChange);
 
+      // 8. Subscribe to SSH reconnection events for voice notifications.
+      _reconnectSub?.cancel();
+      if (_sshPool != null) {
+        _reconnectSub =
+            _sshPool.reconnectionEvents.listen(_handleReconnectionEvent);
+      }
+
       _setState(VoiceSupervisorState.listening);
       developer.log('Pipeline started', name: _tag);
     } catch (e) {
@@ -264,6 +280,7 @@ class VoiceSupervisor {
     _micSub?.cancel();
     _outputSub?.cancel();
     _audioStateSub?.cancel();
+    _reconnectSub?.cancel();
     _stateController.close();
   }
 
@@ -486,6 +503,66 @@ class VoiceSupervisor {
   }
 
   // ---------------------------------------------------------------------------
+  // SSH reconnection voice notifications
+  // ---------------------------------------------------------------------------
+
+  /// Handles SSH reconnection events from the connection pool.
+  ///
+  /// Sends voice notifications when the connection drops and when it
+  /// is restored, so the user is kept informed hands-free.
+  void _handleReconnectionEvent(SshReconnectionEvent event) {
+    if (_currentState == VoiceSupervisorState.idle ||
+        _currentState == VoiceSupervisorState.error) {
+      return;
+    }
+
+    if (event.succeeded) {
+      // Connection restored — announce recovery.
+      _announcedConnectionLoss = false;
+      const message = '[REPORT] SSH connection restored. '
+          'Reattaching to existing sessions.';
+      final reportBytes = Uint8List.fromList(utf8.encode(message));
+      try {
+        _voiceService.injectAudioReport(reportBytes);
+      } catch (e) {
+        developer.log(
+          'Failed to send reconnection success notification: $e',
+          name: _tag,
+        );
+      }
+    } else if (!_announcedConnectionLoss) {
+      // First failure — announce connection loss and reconnection.
+      _announcedConnectionLoss = true;
+      final message = '[REPORT] Connection lost, reconnecting. '
+          'Attempting up to ${event.maxAttempts} retries.';
+      final reportBytes = Uint8List.fromList(utf8.encode(message));
+      try {
+        _voiceService.injectAudioReport(reportBytes);
+      } catch (e) {
+        developer.log(
+          'Failed to send reconnection notification: $e',
+          name: _tag,
+        );
+      }
+    } else if (!event.succeeded &&
+        event.attempt >= event.maxAttempts) {
+      // All attempts exhausted — notify user.
+      _announcedConnectionLoss = false;
+      const message = '[REPORT] All reconnection attempts failed. '
+          'Please check your network connection.';
+      final reportBytes = Uint8List.fromList(utf8.encode(message));
+      try {
+        _voiceService.injectAudioReport(reportBytes);
+      } catch (e) {
+        developer.log(
+          'Failed to send reconnection failure notification: $e',
+          name: _tag,
+        );
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Proactive output reporting
   // ---------------------------------------------------------------------------
 
@@ -671,8 +748,12 @@ class VoiceSupervisor {
     _audioStateSub?.cancel();
     _audioStateSub = null;
 
+    _reconnectSub?.cancel();
+    _reconnectSub = null;
+
     _apiKey = null;
     _preInterruptionState = null;
+    _announcedConnectionLoss = false;
 
     await _mic.stopRecording();
     await _voiceService.disconnect();

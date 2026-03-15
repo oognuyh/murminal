@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:murminal/data/models/server_config.dart';
@@ -12,11 +14,21 @@ class FakeSshService extends SshService {
 
   ConnectionState _fakeState = ConnectionState.disconnected;
 
+  final _reconnectController =
+      StreamController<SshReconnectionEvent>.broadcast();
+
   @override
   ConnectionState get currentState => _fakeState;
 
   @override
   bool get isConnected => _fakeState == ConnectionState.connected;
+
+  @override
+  bool get isReconnecting => _fakeState == ConnectionState.reconnecting;
+
+  @override
+  Stream<SshReconnectionEvent> get reconnectionEvents =>
+      _reconnectController.stream;
 
   @override
   Future<void> connect(ServerConfig config) async {
@@ -37,6 +49,24 @@ class FakeSshService extends SshService {
   @override
   void dispose() {
     _fakeState = ConnectionState.disconnected;
+    _reconnectController.close();
+  }
+
+  /// Simulate emitting a reconnection event.
+  void emitReconnectionEvent(SshReconnectionEvent event) {
+    _fakeState = ConnectionState.reconnecting;
+    _reconnectController.add(event);
+  }
+
+  /// Simulate reconnection success.
+  void simulateReconnected() {
+    _fakeState = ConnectionState.connected;
+    _reconnectController.add(const SshReconnectionEvent(
+      attempt: 1,
+      maxAttempts: 10,
+      delay: Duration.zero,
+      succeeded: true,
+    ));
   }
 }
 
@@ -77,6 +107,10 @@ void main() {
 
       test('isConnected returns false for unknown server', () {
         expect(pool.isConnected('unknown'), false);
+      });
+
+      test('isReconnecting returns false for unknown server', () {
+        expect(pool.isReconnecting('unknown'), false);
       });
     });
 
@@ -211,8 +245,69 @@ void main() {
       });
     });
 
+    group('reconnection events', () {
+      test('forwards reconnection events from services', () async {
+        pool.register(_makeConfig('srv-1'));
+        await pool.getConnection('srv-1');
+
+        final events = <SshReconnectionEvent>[];
+        pool.reconnectionEvents.listen(events.add);
+
+        // Simulate a reconnection event from the service.
+        createdServices.first.emitReconnectionEvent(
+          const SshReconnectionEvent(
+            attempt: 1,
+            maxAttempts: 10,
+            delay: Duration(seconds: 1),
+            succeeded: false,
+          ),
+        );
+
+        await Future<void>.delayed(Duration.zero);
+
+        expect(events, hasLength(1));
+        expect(events.first.attempt, 1);
+        expect(events.first.succeeded, false);
+      });
+
+      test('forwards success events from services', () async {
+        pool.register(_makeConfig('srv-1'));
+        await pool.getConnection('srv-1');
+
+        final events = <SshReconnectionEvent>[];
+        pool.reconnectionEvents.listen(events.add);
+
+        createdServices.first.simulateReconnected();
+
+        await Future<void>.delayed(Duration.zero);
+
+        expect(events, hasLength(1));
+        expect(events.first.succeeded, true);
+      });
+
+      test('isReconnecting returns true when service is reconnecting',
+          () async {
+        pool.register(_makeConfig('srv-1'));
+        await pool.getConnection('srv-1');
+
+        expect(pool.isReconnecting('srv-1'), false);
+
+        createdServices.first.emitReconnectionEvent(
+          const SshReconnectionEvent(
+            attempt: 1,
+            maxAttempts: 10,
+            delay: Duration(seconds: 1),
+            succeeded: false,
+          ),
+        );
+
+        expect(pool.isReconnecting('srv-1'), true);
+      });
+    });
+
     group('max connections per server', () {
-      test('enforces limit of ${SshConnectionPool.maxConnectionsPerServer}',
+      test(
+          'enforces limit of ${SshConnectionPool.maxConnectionsPerServer}',
           () async {
         final config = _makeConfig('srv-1');
         pool.register(config);
@@ -223,7 +318,9 @@ void main() {
         // Simulate reaching the max by manipulating internal state
         // through repeated disconnect/reconnect cycles.
         // The pool tracks cumulative connection count per server.
-        for (var i = 1; i < SshConnectionPool.maxConnectionsPerServer; i++) {
+        for (var i = 1;
+            i < SshConnectionPool.maxConnectionsPerServer;
+            i++) {
           // Disconnect the existing connection to force a new one.
           final service = createdServices.last;
           service._fakeState = ConnectionState.disconnected;
