@@ -19,6 +19,7 @@ import 'package:murminal/data/services/tool_executor.dart';
 import 'package:murminal/data/services/voice/qwen_realtime_service.dart';
 import 'package:murminal/data/services/voice/realtime_voice_service.dart';
 import 'package:murminal/data/services/engine_registry.dart';
+import 'package:murminal/data/services/feedback_sound_service.dart';
 import 'package:murminal/data/services/voice_supervisor.dart';
 import 'package:murminal/data/models/voice_supervisor_state.dart';
 
@@ -161,6 +162,17 @@ final sessionListProvider =
     FutureProvider.family<List<Session>, String>((ref, serverId) async {
   final service = ref.watch(sessionServiceProvider);
   return service.listSessions(serverId: serverId);
+});
+
+/// Feedback sound service for voice confirmation cues.
+///
+/// Plays short audio cues on command recognition, success, and error.
+/// Backed by [SharedPreferences] for the enabled/disabled toggle.
+final feedbackSoundServiceProvider = Provider<FeedbackSoundService>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  final service = FeedbackSoundService(prefs);
+  ref.onDispose(() => service.dispose());
+  return service;
 });
 
 /// Microphone service for PCM audio capture.
