@@ -19,12 +19,20 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 /// - Function calling round-trips
 /// - Proactive audio report injection
 /// - Automatic reconnection on 120-minute session timeout
+/// - WebSocket disconnect auto-reconnect with exponential backoff
+/// - API rate limit detection with backoff notification
 class QwenRealtimeService extends RealtimeVoiceService {
   static const _defaultModel = 'qwen-omni-turbo-latest';
   static const _tag = 'QwenRealtimeService';
 
   /// Maximum session duration before forced reconnection.
   static const _sessionTimeout = Duration(minutes: 120);
+
+  /// Maximum WebSocket reconnection attempts on unexpected disconnect.
+  static const maxReconnectAttempts = 5;
+
+  /// Maximum backoff delay between reconnection attempts.
+  static const maxBackoffDelay = Duration(seconds: 30);
 
   /// Endpoint for the international DashScope Realtime API.
   static const _endpoint =
@@ -41,6 +49,27 @@ class QwenRealtimeService extends RealtimeVoiceService {
   List<ToolDefinition>? _tools;
   String? _systemPrompt;
   bool _connected = false;
+
+  /// Whether the service is currently in a reconnection loop.
+  bool _reconnecting = false;
+
+  /// Callback invoked when a rate limit (HTTP 429) is detected.
+  ///
+  /// Set by the error recovery service to coordinate backoff and
+  /// user notification.
+  void Function(Duration backoff)? onRateLimitDetected;
+
+  /// Callback invoked on each WebSocket reconnection attempt.
+  void Function(int attempt, int maxAttempts)? onReconnectAttempt;
+
+  /// Callback invoked when WebSocket reconnection succeeds.
+  void Function()? onReconnected;
+
+  /// Callback invoked when all WebSocket reconnection attempts fail.
+  void Function()? onReconnectFailed;
+
+  /// Callback invoked when the WebSocket disconnects unexpectedly.
+  void Function()? onDisconnected;
 
   @override
   Stream<VoiceEvent> get events => _eventController.stream;
@@ -207,6 +236,11 @@ class QwenRealtimeService extends RealtimeVoiceService {
         developer.log('Buffer committed', name: _tag);
 
       case QwenError():
+        // Detect rate limit errors (HTTP 429 or rate_limit_exceeded).
+        if (_isRateLimitError(event.message)) {
+          final backoff = _parseRetryAfter(event.message);
+          onRateLimitDetected?.call(backoff);
+        }
         _eventController.add(VoiceError(event.message));
 
       case QwenUnknownEvent():
@@ -251,11 +285,24 @@ class QwenRealtimeService extends RealtimeVoiceService {
     _sessionTimer = Timer(reconnectAt, _reconnect);
   }
 
-  /// Tears down the current connection and re-establishes it, preserving
-  /// the API key, model, tools, and system prompt configuration.
+  /// Tears down the current connection and re-establishes it with
+  /// exponential backoff, preserving the API key, model, tools, and
+  /// system prompt configuration.
+  ///
+  /// Backoff schedule: 1s, 2s, 4s, 8s, 16s (capped at [maxBackoffDelay]).
+  /// Emits reconnection callbacks so the error recovery service can
+  /// notify the user.
   Future<void> _reconnect() async {
-    developer.log('Reconnecting (session timeout or unexpected close)',
-        name: _tag);
+    if (_reconnecting) return;
+    _reconnecting = true;
+
+    developer.log(
+      'Starting WebSocket reconnection (max $maxReconnectAttempts attempts)',
+      name: _tag,
+    );
+
+    onDisconnected?.call();
+
     await _subscription?.cancel();
     _subscription = null;
     await _channel?.sink.close();
@@ -263,9 +310,57 @@ class QwenRealtimeService extends RealtimeVoiceService {
     _sessionTimer?.cancel();
     _sessionTimer = null;
 
-    if (_connected) {
-      await _establishConnection();
+    for (var attempt = 1; attempt <= maxReconnectAttempts; attempt++) {
+      if (!_connected) {
+        _reconnecting = false;
+        return;
+      }
+
+      final backoffSeconds = 1 << (attempt - 1);
+      final delay = Duration(
+        seconds: backoffSeconds.clamp(1, maxBackoffDelay.inSeconds),
+      );
+
+      developer.log(
+        'WebSocket reconnect attempt $attempt/$maxReconnectAttempts '
+        '(delay: ${delay.inSeconds}s)',
+        name: _tag,
+      );
+
+      onReconnectAttempt?.call(attempt, maxReconnectAttempts);
+
+      await Future<void>.delayed(delay);
+
+      if (!_connected) {
+        _reconnecting = false;
+        return;
+      }
+
+      try {
+        await _establishConnection();
+        developer.log(
+          'WebSocket reconnected on attempt $attempt',
+          name: _tag,
+        );
+        onReconnected?.call();
+        _reconnecting = false;
+        return;
+      } on Exception catch (e) {
+        developer.log(
+          'WebSocket reconnect attempt $attempt failed: $e',
+          name: _tag,
+        );
+      }
     }
+
+    // All attempts exhausted.
+    developer.log('All WebSocket reconnection attempts exhausted', name: _tag);
+    onReconnectFailed?.call();
+    _reconnecting = false;
+    _connected = false;
+    _eventController.add(const VoiceError(
+      'Voice connection lost. All reconnection attempts failed.',
+    ));
   }
 
   /// Serializes and sends a JSON message through the WebSocket.
@@ -286,5 +381,28 @@ class QwenRealtimeService extends RealtimeVoiceService {
     } catch (_) {
       return {};
     }
+  }
+
+  /// Checks if an error message indicates a rate limit (HTTP 429).
+  bool _isRateLimitError(String message) {
+    final lower = message.toLowerCase();
+    return lower.contains('429') ||
+        lower.contains('rate_limit') ||
+        lower.contains('rate limit') ||
+        lower.contains('too many requests');
+  }
+
+  /// Extracts a retry-after duration from an error message.
+  ///
+  /// Looks for patterns like "retry after 60s" or "retry_after: 30".
+  /// Falls back to 60 seconds if no value is found.
+  Duration _parseRetryAfter(String message) {
+    final match = RegExp(r'retry.?after.?\s*:?\s*(\d+)', caseSensitive: false)
+        .firstMatch(message);
+    if (match != null) {
+      final seconds = int.tryParse(match.group(1)!) ?? 60;
+      return Duration(seconds: seconds);
+    }
+    return const Duration(seconds: 60);
   }
 }
