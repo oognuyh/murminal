@@ -1,0 +1,45 @@
+{
+  "name": "copilot",
+  "display_name": "GitHub Copilot CLI",
+  "type": "chat-tui",
+  "input_mode": "natural_language",
+  "launch": {
+    "command": "gh",
+    "flags": ["copilot"],
+    "env": {}
+  },
+  "patterns": {
+    "prompt": "^>\\s|^\\?\\s|❯\\s",
+    "thinking": "Thinking\\.\\.\\.|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏|Searching\\.\\.\\.|Analyzing\\.\\.\\.",
+    "complete": "✓|✔|Done|Suggestion:|Command:|Explanation:",
+    "error": "Error:|error:|ERR!|FAIL|Failed|not authenticated|unauthorized",
+    "question": "\\(y\\/n\\)|\\(Y\\/n\\)|Execute command\\?|Run this\\?|Confirm\\?|Select an option"
+  },
+  "states": {
+    "thinking": {
+      "indicator": "spinner",
+      "report": false
+    },
+    "complete": {
+      "indicator": "checkmark",
+      "report": true,
+      "priority": "normal"
+    },
+    "error": {
+      "indicator": "error_text",
+      "report": true,
+      "priority": "high"
+    },
+    "question": {
+      "indicator": "prompt_text",
+      "report": true,
+      "priority": "high"
+    }
+  },
+  "report_templates": {
+    "complete": "Copilot suggestion ready",
+    "error": "Error encountered: {summary}",
+    "question": "Waiting for confirmation: {summary}",
+    "thinking": "Copilot is thinking..."
+  }
+}

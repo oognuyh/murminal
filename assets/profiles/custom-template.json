@@ -1,0 +1,45 @@
+{
+  "name": "my-agent",
+  "display_name": "My Custom Agent",
+  "type": "chat-tui",
+  "input_mode": "natural_language",
+  "launch": {
+    "command": "my-agent-binary",
+    "flags": [],
+    "env": {}
+  },
+  "patterns": {
+    "prompt": "^>\\s|❯\\s",
+    "thinking": "Thinking\\.\\.\\.|⠋|⠙|⠹|⠸|⠼|⠴|⠦|⠧|⠇|⠏",
+    "complete": "✓|Done|Complete|Finished",
+    "error": "Error:|error:|FAIL|Failed",
+    "question": "\\(y\\/n\\)|\\(Y\\/n\\)|Confirm\\?|Continue\\?"
+  },
+  "states": {
+    "thinking": {
+      "indicator": "spinner",
+      "report": false
+    },
+    "complete": {
+      "indicator": "checkmark",
+      "report": true,
+      "priority": "normal"
+    },
+    "error": {
+      "indicator": "error_text",
+      "report": true,
+      "priority": "high"
+    },
+    "question": {
+      "indicator": "prompt_text",
+      "report": true,
+      "priority": "high"
+    }
+  },
+  "report_templates": {
+    "complete": "Task completed successfully",
+    "error": "Error encountered: {summary}",
+    "question": "Waiting for input: {summary}",
+    "thinking": "Agent is working..."
+  }
+}
