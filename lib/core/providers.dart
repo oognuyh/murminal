@@ -59,6 +59,23 @@ final pollingIntervalProvider = StateProvider<double>((ref) {
 final voiceProviderSettingProvider =
     StateProvider<VoiceProvider>((ref) => VoiceProvider.qwen);
 
+/// Whether automatic reporting is enabled.
+///
+/// When enabled, the voice supervisor periodically reads terminal output
+/// and provides spoken status updates. Persisted in [SharedPreferences].
+final autoReportProvider = StateProvider<bool>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return prefs.getBool('auto_report') ?? false;
+});
+
+/// User's preferred language for voice interaction.
+///
+/// Persisted in [SharedPreferences]. Defaults to 'Korean'.
+final languageSettingProvider = StateProvider<String>((ref) {
+  final prefs = ref.watch(sharedPreferencesProvider);
+  return prefs.getString('language') ?? 'Korean';
+});
+
 /// Reads the stored API key for the currently selected voice provider.
 final voiceApiKeyProvider = FutureProvider<String?>((ref) async {
   final provider = ref.watch(voiceProviderSettingProvider);

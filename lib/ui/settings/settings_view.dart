@@ -8,59 +8,24 @@ import 'package:murminal/data/models/voice_provider.dart';
 /// Background color for the settings screen.
 const _kBgColor = Color(0xFF0A0F1C);
 
-/// Surface color for cards and containers.
+/// Surface color for cards and tiles.
 const _kSurfaceColor = Color(0xFF1E293B);
 
 /// Accent color for active controls and highlights.
 const _kAccentColor = Color(0xFF22D3EE);
 
-/// Settings screen with voice provider configuration and polling interval.
-class SettingsView extends ConsumerStatefulWidget {
+/// Supported languages for voice interaction.
+const _kLanguages = ['Korean', 'English', 'Japanese', 'Chinese'];
+
+/// Settings screen with sectioned list layout matching the pen wireframe.
+///
+/// Sections: VOICE, ENGINE, ABOUT. Each section has grey header labels
+/// and list tiles with icon + label + optional value/chevron.
+class SettingsView extends ConsumerWidget {
   const SettingsView({super.key});
 
   @override
-  ConsumerState<SettingsView> createState() => _SettingsViewState();
-}
-
-class _SettingsViewState extends ConsumerState<SettingsView> {
-  final Map<VoiceProvider, TextEditingController> _keyControllers = {};
-  final Map<VoiceProvider, bool> _obscured = {};
-  final Map<VoiceProvider, _ConnectionTestStatus> _testStatus = {};
-
-  @override
-  void initState() {
-    super.initState();
-    for (final provider in VoiceProvider.values) {
-      _keyControllers[provider] = TextEditingController();
-      _obscured[provider] = true;
-      _testStatus[provider] = _ConnectionTestStatus.idle;
-    }
-    _loadApiKeys();
-  }
-
-  Future<void> _loadApiKeys() async {
-    final storage = ref.read(secureStorageProvider);
-    for (final provider in VoiceProvider.values) {
-      final key = await storage.read(key: provider.storageKey);
-      if (key != null && mounted) {
-        _keyControllers[provider]!.text = key;
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    for (final controller in _keyControllers.values) {
-      controller.dispose();
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final pollingInterval = ref.watch(pollingIntervalProvider);
-    final selectedProvider = ref.watch(voiceProviderSettingProvider);
-
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       backgroundColor: _kBgColor,
       body: ListView(
@@ -76,418 +41,160 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
             ),
           ),
           const SizedBox(height: 32),
-          _buildVoiceProviderSection(context, selectedProvider),
+          _buildVoiceSection(context, ref),
           const SizedBox(height: 32),
-          _buildEngineProfilesLink(context),
+          _buildEngineSection(context),
           const SizedBox(height: 32),
-          _buildPollingIntervalSection(context, ref, pollingInterval),
+          _buildAboutSection(context, ref),
         ],
       ),
     );
   }
 
-  // -- Voice provider section ------------------------------------------------
+  // -- VOICE section ----------------------------------------------------------
 
-  Widget _buildVoiceProviderSection(
-    BuildContext context,
-    VoiceProvider selected,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildVoiceSection(BuildContext context, WidgetRef ref) {
+    final selectedProvider = ref.watch(voiceProviderSettingProvider);
+    final autoReport = ref.watch(autoReportProvider);
+    final language = ref.watch(languageSettingProvider);
+
+    return _Section(
+      title: 'VOICE',
       children: [
-        _buildSectionHeader('VOICE'),
-        const SizedBox(height: 16),
-        _buildProviderSelector(selected),
-        const SizedBox(height: 20),
-        _buildApiKeyField(selected),
-        const SizedBox(height: 16),
-        _buildTestConnectionButton(selected),
+        _DropdownTile<VoiceProvider>(
+          icon: Icons.record_voice_over,
+          label: 'Voice Provider',
+          value: selectedProvider,
+          items: VoiceProvider.values,
+          itemLabel: (p) => p.displayName,
+          onChanged: (value) {
+            if (value != null) {
+              ref.read(voiceProviderSettingProvider.notifier).state = value;
+            }
+          },
+        ),
+        _ToggleTile(
+          icon: Icons.auto_awesome,
+          label: 'Auto Report',
+          value: autoReport,
+          onChanged: (value) {
+            ref.read(autoReportProvider.notifier).state = value;
+            final prefs = ref.read(sharedPreferencesProvider);
+            prefs.setBool('auto_report', value);
+          },
+        ),
+        _DropdownTile<String>(
+          icon: Icons.language,
+          label: 'Language',
+          value: language,
+          items: _kLanguages,
+          itemLabel: (l) => l,
+          onChanged: (value) {
+            if (value != null) {
+              ref.read(languageSettingProvider.notifier).state = value;
+              final prefs = ref.read(sharedPreferencesProvider);
+              prefs.setString('language', value);
+            }
+          },
+        ),
       ],
     );
   }
 
-  Widget _buildSectionHeader(String title) {
-    return Text(
-      title,
-      style: const TextStyle(
-        color: Colors.white54,
-        fontSize: 13,
-        fontFamily: 'JetBrains Mono',
-        letterSpacing: 1.5,
-        fontWeight: FontWeight.w600,
-      ),
-    );
-  }
+  // -- ENGINE section ---------------------------------------------------------
 
-  Widget _buildProviderSelector(VoiceProvider selected) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _kSurfaceColor,
-        borderRadius: BorderRadius.circular(10),
-      ),
-      padding: const EdgeInsets.all(4),
-      child: Row(
-        children: VoiceProvider.values.map((provider) {
-          final isSelected = provider == selected;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () {
-                ref.read(voiceProviderSettingProvider.notifier).state =
-                    provider;
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: isSelected ? _kAccentColor.withAlpha(38) : null,
-                  borderRadius: BorderRadius.circular(8),
-                  border: isSelected
-                      ? Border.all(color: _kAccentColor.withAlpha(102))
-                      : null,
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  provider.name[0].toUpperCase() + provider.name.substring(1),
-                  style: TextStyle(
-                    color: isSelected ? _kAccentColor : Colors.white54,
-                    fontSize: 13,
-                    fontFamily: 'JetBrains Mono',
-                    fontWeight:
-                        isSelected ? FontWeight.w700 : FontWeight.normal,
-                  ),
-                ),
+  Widget _buildEngineSection(BuildContext context) {
+    return _Section(
+      title: 'ENGINE',
+      children: [
+        _NavigationTile(
+          icon: Icons.terminal,
+          label: 'Engine Profiles',
+          onTap: () => context.push(AppRoutes.engineProfiles),
+        ),
+        _NavigationTile(
+          icon: Icons.shield_outlined,
+          label: 'Safety Rules',
+          onTap: () {
+            // Safety rules screen not yet implemented; show placeholder.
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Safety Rules — coming soon'),
+                backgroundColor: _kSurfaceColor,
+                duration: Duration(seconds: 2),
               ),
-            ),
-          );
-        }).toList(),
-      ),
+            );
+          },
+        ),
+      ],
     );
   }
 
-  Widget _buildApiKeyField(VoiceProvider provider) {
-    final controller = _keyControllers[provider]!;
-    final obscured = _obscured[provider]!;
+  // -- ABOUT section ----------------------------------------------------------
 
+  Widget _buildAboutSection(BuildContext context, WidgetRef ref) {
+    return _Section(
+      title: 'ABOUT',
+      children: [
+        _ValueTile(
+          icon: Icons.info_outline,
+          label: 'Version',
+          value: '1.0.0',
+        ),
+        _NavigationTile(
+          icon: Icons.vpn_key_outlined,
+          label: 'API Keys',
+          onTap: () => context.push(AppRoutes.apiKeys),
+        ),
+      ],
+    );
+  }
+}
+
+// =============================================================================
+// Shared section widget
+// =============================================================================
+
+/// A labelled section with a grey header and a rounded card containing tiles.
+class _Section extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+
+  const _Section({required this.title, required this.children});
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          '${provider.displayName} API Key',
+          title,
           style: const TextStyle(
-            color: Colors.white70,
+            color: Colors.white54,
             fontSize: 13,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: controller,
-          obscureText: obscured,
-          style: const TextStyle(
-            color: Colors.white,
             fontFamily: 'JetBrains Mono',
-            fontSize: 13,
-          ),
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: _kSurfaceColor,
-            hintText: 'Enter your API key',
-            hintStyle: const TextStyle(color: Colors.white24),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 14,
-              vertical: 14,
-            ),
-            suffixIcon: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: Icon(
-                    obscured ? Icons.visibility_off : Icons.visibility,
-                    color: Colors.white38,
-                    size: 20,
-                  ),
-                  onPressed: () {
-                    setState(() {
-                      _obscured[provider] = !obscured;
-                    });
-                  },
-                ),
-                IconButton(
-                  icon: const Icon(
-                    Icons.save_outlined,
-                    color: _kAccentColor,
-                    size: 20,
-                  ),
-                  onPressed: () => _saveApiKey(provider),
-                ),
-              ],
-            ),
-          ),
-          onSubmitted: (_) => _saveApiKey(provider),
-        ),
-      ],
-    );
-  }
-
-  Future<void> _saveApiKey(VoiceProvider provider) async {
-    final storage = ref.read(secureStorageProvider);
-    final key = _keyControllers[provider]!.text.trim();
-    if (key.isEmpty) {
-      await storage.delete(key: provider.storageKey);
-    } else {
-      await storage.write(key: provider.storageKey, value: key);
-    }
-    // Invalidate the API key provider so downstream consumers re-read.
-    ref.invalidate(voiceApiKeyProvider);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            key.isEmpty
-                ? '${provider.displayName} API key removed'
-                : '${provider.displayName} API key saved',
-          ),
-          backgroundColor: _kSurfaceColor,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
-  Widget _buildTestConnectionButton(VoiceProvider provider) {
-    final status = _testStatus[provider]!;
-    final isTesting = status == _ConnectionTestStatus.testing;
-
-    return SizedBox(
-      width: double.infinity,
-      child: OutlinedButton.icon(
-        onPressed: isTesting ? null : () => _testConnection(provider),
-        icon: _testStatusIcon(status),
-        label: Text(
-          isTesting ? 'Testing...' : 'Test Connection',
-          style: const TextStyle(
-            fontFamily: 'JetBrains Mono',
-            fontSize: 13,
-          ),
-        ),
-        style: OutlinedButton.styleFrom(
-          foregroundColor: _kAccentColor,
-          side: BorderSide(color: _kAccentColor.withAlpha(102)),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _testStatusIcon(_ConnectionTestStatus status) {
-    return switch (status) {
-      _ConnectionTestStatus.idle =>
-        const Icon(Icons.wifi_tethering, size: 18),
-      _ConnectionTestStatus.testing => const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: _kAccentColor,
-          ),
-        ),
-      _ConnectionTestStatus.success =>
-        const Icon(Icons.check_circle_outline, size: 18, color: Colors.green),
-      _ConnectionTestStatus.failure =>
-        const Icon(Icons.error_outline, size: 18, color: Colors.redAccent),
-    };
-  }
-
-  Future<void> _testConnection(VoiceProvider provider) async {
-    final key = _keyControllers[provider]!.text.trim();
-    if (key.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter an API key first'),
-          backgroundColor: _kSurfaceColor,
-        ),
-      );
-      return;
-    }
-
-    setState(() {
-      _testStatus[provider] = _ConnectionTestStatus.testing;
-    });
-
-    try {
-      // Actually test the WebSocket connection to the voice API.
-      final service = ref.read(realtimeVoiceServiceProvider);
-      await service.connect(key);
-      // If connect() doesn't throw, the WebSocket handshake succeeded.
-      await service.disconnect();
-
-      if (mounted) {
-        setState(() {
-          _testStatus[provider] = _ConnectionTestStatus.success;
-        });
-      }
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          _testStatus[provider] = _ConnectionTestStatus.failure;
-        });
-      }
-    }
-  }
-
-  // -- Engine profiles section -----------------------------------------------
-
-  Widget _buildEngineProfilesLink(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader('ENGINE'),
-        const SizedBox(height: 16),
-        Material(
-          color: _kSurfaceColor,
-          borderRadius: BorderRadius.circular(10),
-          child: InkWell(
-            onTap: () => context.push(AppRoutes.engineProfiles),
-            borderRadius: BorderRadius.circular(10),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              child: Row(
-                children: [
-                  Icon(Icons.terminal, color: _kAccentColor, size: 20),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Engine Profiles',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'View, edit, and create engine profiles',
-                          style: TextStyle(
-                            color: Colors.white38,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right, color: Colors.white24, size: 20),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // -- Polling section (existing) -------------------------------------------
-
-  Widget _buildPollingIntervalSection(
-    BuildContext context,
-    WidgetRef ref,
-    double value,
-  ) {
-    final theme = Theme.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionHeader('POLLING'),
-        const SizedBox(height: 16),
-        Text(
-          'Output Polling Interval',
-          style: theme.textTheme.titleMedium?.copyWith(
-            color: Colors.white,
+            letterSpacing: 1.5,
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          'How often terminal output is checked for changes.',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: Colors.white38,
+        const SizedBox(height: 12),
+        Container(
+          decoration: BoxDecoration(
+            color: _kSurfaceColor,
+            borderRadius: BorderRadius.circular(12),
           ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            const Text(
-              '0.5s',
-              style: TextStyle(
-                color: Colors.white38,
-                fontSize: 12,
-                fontFamily: 'JetBrains Mono',
-              ),
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  activeTrackColor: theme.colorScheme.primary,
-                  inactiveTrackColor: Colors.white12,
-                  thumbColor: theme.colorScheme.primary,
-                  overlayColor:
-                      theme.colorScheme.primary.withAlpha(30),
-                  trackHeight: 4,
-                ),
-                child: Slider(
-                  value: value,
-                  min: 0.5,
-                  max: 5.0,
-                  divisions: 9,
-                  onChanged: (newValue) {
-                    ref.read(pollingIntervalProvider.notifier).state =
-                        newValue;
-                  },
-                  onChangeEnd: (newValue) {
-                    // Persist to SharedPreferences on release.
-                    final prefs = ref.read(sharedPreferencesProvider);
-                    prefs.setDouble('polling_interval', newValue);
-                  },
-                ),
-              ),
-            ),
-            const Text(
-              '5.0s',
-              style: TextStyle(
-                color: Colors.white38,
-                fontSize: 12,
-                fontFamily: 'JetBrains Mono',
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        Center(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withAlpha(13),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white12),
-            ),
-            child: Text(
-              '${value.toStringAsFixed(1)}s',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontFamily: 'JetBrains Mono',
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+          child: Column(
+            children: [
+              for (int i = 0; i < children.length; i++) ...[
+                children[i],
+                if (i < children.length - 1)
+                  const Divider(
+                    height: 1,
+                    indent: 52,
+                    color: Colors.white10,
+                  ),
+              ],
+            ],
           ),
         ),
       ],
@@ -495,5 +202,204 @@ class _SettingsViewState extends ConsumerState<SettingsView> {
   }
 }
 
-/// Internal status for the connection test button.
-enum _ConnectionTestStatus { idle, testing, success, failure }
+// =============================================================================
+// Tile variants
+// =============================================================================
+
+/// Navigation tile with icon, label, and trailing chevron.
+class _NavigationTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _NavigationTile({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              Icon(icon, color: _kAccentColor, size: 20),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right,
+                color: Colors.white24,
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Static tile displaying a read-only value on the right.
+class _ValueTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _ValueTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Icon(icon, color: _kAccentColor, size: 20),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white38,
+              fontSize: 14,
+              fontFamily: 'JetBrains Mono',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Toggle tile with a switch on the right.
+class _ToggleTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  const _ToggleTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          Icon(icon, color: _kAccentColor, size: 20),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          Switch.adaptive(
+            value: value,
+            onChanged: onChanged,
+            activeColor: _kAccentColor,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dropdown tile that shows the current value and opens a dropdown on tap.
+class _DropdownTile<T> extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final T value;
+  final List<T> items;
+  final String Function(T) itemLabel;
+  final ValueChanged<T?> onChanged;
+
+  const _DropdownTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.items,
+    required this.itemLabel,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, color: _kAccentColor, size: 20),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          DropdownButton<T>(
+            value: value,
+            dropdownColor: _kSurfaceColor,
+            underline: const SizedBox.shrink(),
+            icon: const Icon(
+              Icons.expand_more,
+              color: Colors.white24,
+              size: 20,
+            ),
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+            ),
+            items: items.map((item) {
+              return DropdownMenuItem<T>(
+                value: item,
+                child: Text(itemLabel(item)),
+              );
+            }).toList(),
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+}
