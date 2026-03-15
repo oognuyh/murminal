@@ -168,6 +168,17 @@ class VoiceSupervisor {
         'required': ['session_name'],
       },
     ),
+    ToolDefinition(
+      name: 'get_all_sessions',
+      description:
+          'List all sessions across all servers. Use this tool to resolve '
+          'ambiguous commands by checking which sessions match a user\'s '
+          'reference when multiple candidates exist.',
+      parameters: {
+        'type': 'object',
+        'properties': {},
+      },
+    ),
   ];
 
   // ---------------------------------------------------------------------------
@@ -430,6 +441,38 @@ class VoiceSupervisor {
     for (final tool in toolDefinitions) {
       buffer.writeln('- ${tool.name}: ${tool.description}');
     }
+    buffer.writeln();
+
+    // Disambiguation instructions.
+    buffer.writeln('## Disambiguation');
+    buffer.writeln(
+      'When a command is ambiguous (e.g., it matches multiple sessions by '
+      'name or keyword), you MUST ask the user a clarifying question before '
+      'executing the command. Use the get_all_sessions tool to retrieve the '
+      'full session list and identify which sessions match the user\'s '
+      'reference.',
+    );
+    buffer.writeln();
+    buffer.writeln(
+      'Follow these disambiguation rules:',
+    );
+    buffer.writeln(
+      '1. If a user\'s target matches multiple sessions, ask which specific '
+      'session they mean by listing the matching candidates.',
+    );
+    buffer.writeln(
+      '2. If the target cannot be resolved to any session, tell the user no '
+      'match was found and ask them to clarify.',
+    );
+    buffer.writeln(
+      '3. After 2 clarification attempts without resolution, fall back to '
+      'listing all matching options with their details (name, server, '
+      'status) so the user can choose directly.',
+    );
+    buffer.writeln(
+      '4. Never guess or pick a session arbitrarily when multiple '
+      'candidates match.',
+    );
     buffer.writeln();
 
     // Proactive reporting instructions.
