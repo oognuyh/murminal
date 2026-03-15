@@ -19,6 +19,7 @@
 		E48425AFDD158C01444CED8C /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 200F49C1B5199396F32EC7F6 /* Pods_Runner.framework */; };
 		A1B2C3D4E5F6071800AABB01 /* SpeechRecognitionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800AABB00 /* SpeechRecognitionPlugin.swift */; };
 		A1B2C3D4E5F6071800AABB03 /* SpeechSynthesisPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F6071800AABB02 /* SpeechSynthesisPlugin.swift */; };
+		B2C3D4E5F6A7081900BBCC01 /* NotificationPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2C3D4E5F6A7081900BBCC00 /* NotificationPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,6 +72,7 @@
 		D5C9059A7DA53AF763CC50E0 /* Pods-RunnerTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.debug.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.debug.xcconfig"; sourceTree = "<group>"; };
 		A1B2C3D4E5F6071800AABB00 /* SpeechRecognitionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechRecognitionPlugin.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F6071800AABB02 /* SpeechSynthesisPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSynthesisPlugin.swift; sourceTree = "<group>"; };
+		B2C3D4E5F6A7081900BBCC00 /* NotificationPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -169,6 +171,7 @@
 				F1A2B3C4D5E6F7A800123456 /* NowPlayingPlugin.swift */,
 				A1B2C3D4E5F6071800AABB00 /* SpeechRecognitionPlugin.swift */,
 				A1B2C3D4E5F6071800AABB02 /* SpeechSynthesisPlugin.swift */,
+				B2C3D4E5F6A7081900BBCC00 /* NotificationPlugin.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
@@ -391,6 +394,7 @@
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				A1B2C3D4E5F6071800AABB01 /* SpeechRecognitionPlugin.swift in Sources */,
 				A1B2C3D4E5F6071800AABB03 /* SpeechSynthesisPlugin.swift in Sources */,
+				B2C3D4E5F6A7081900BBCC01 /* NotificationPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
