@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:typed_data';
 
+import 'package:murminal/data/models/audio_session_state.dart';
 import 'package:murminal/data/models/output_change_event.dart';
 import 'package:murminal/data/models/tool_definition.dart';
 import 'package:murminal/data/models/voice_event.dart';
@@ -51,6 +52,13 @@ class VoiceSupervisor {
   StreamSubscription<VoiceEvent>? _voiceEventSub;
   StreamSubscription<Uint8List>? _micSub;
   StreamSubscription<OutputChangeEvent>? _outputSub;
+  StreamSubscription<AudioSessionState>? _audioStateSub;
+
+  /// Cached API key for WebSocket reconnection after audio interruption.
+  String? _apiKey;
+
+  /// The supervisor state before an interruption, used to restore after resume.
+  VoiceSupervisorState? _preInterruptionState;
 
   VoiceSupervisor({
     required RealtimeVoiceService voiceService,
@@ -198,10 +206,17 @@ class VoiceSupervisor {
     }
 
     _setState(VoiceSupervisorState.connecting);
+    _apiKey = apiKey;
 
     try {
       // 1. Activate iOS audio session for background playback/recording.
       await _audioSession.activate();
+
+      // 1a. Listen for audio session interruptions (phone calls, other apps).
+      _audioStateSub?.cancel();
+      _audioStateSub = _audioSession.stateStream.listen(
+        _handleAudioSessionState,
+      );
 
       // 2. Request mic permission and start recording.
       final granted = await _mic.requestPermission();
@@ -248,6 +263,7 @@ class VoiceSupervisor {
     _voiceEventSub?.cancel();
     _micSub?.cancel();
     _outputSub?.cancel();
+    _audioStateSub?.cancel();
     _stateController.close();
   }
 
@@ -332,6 +348,140 @@ class VoiceSupervisor {
       await _voiceService.updateSystemPrompt(prompt);
     } catch (e) {
       developer.log('Failed to refresh system prompt: $e', name: _tag);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Audio session interruption handling
+  // ---------------------------------------------------------------------------
+
+  /// Reacts to [AudioSessionState] changes from the system.
+  ///
+  /// On interruption (phone call, Siri, another app claiming audio):
+  ///   - Pauses the microphone to stop streaming audio.
+  ///   - Pauses the output monitor to avoid queueing stale reports.
+  ///   - Moves the supervisor to [VoiceSupervisorState.interrupted].
+  ///
+  /// On resume after interruption:
+  ///   - Restarts the microphone and output monitor.
+  ///   - Reconnects the WebSocket if the connection was dropped.
+  ///   - Sends a "Voice session resumed" notification via the voice model.
+  void _handleAudioSessionState(AudioSessionState audioState) {
+    switch (audioState) {
+      case AudioSessionState.interrupted:
+        _onAudioInterrupted();
+      case AudioSessionState.resumed:
+        _onAudioResumed();
+      case AudioSessionState.active:
+      case AudioSessionState.deactivated:
+        // No action needed; deactivation is handled by stop/teardown.
+        break;
+    }
+  }
+
+  /// Pauses voice pipeline components when the audio session is interrupted.
+  Future<void> _onAudioInterrupted() async {
+    if (_currentState == VoiceSupervisorState.idle ||
+        _currentState == VoiceSupervisorState.error) {
+      return;
+    }
+
+    _preInterruptionState = _currentState;
+    developer.log('Audio interrupted, pausing pipeline', name: _tag);
+
+    // Pause the microphone to free the audio route.
+    _micSub?.cancel();
+    _micSub = null;
+    await _mic.stopRecording();
+
+    // Pause output monitor to avoid accumulating stale reports.
+    _outputSub?.cancel();
+    _outputSub = null;
+
+    _setState(VoiceSupervisorState.interrupted);
+  }
+
+  /// Restores the voice pipeline after an audio interruption ends.
+  ///
+  /// Restarts the microphone, re-subscribes to the output monitor,
+  /// and reconnects the WebSocket if the connection was lost during
+  /// the interruption. Sends a recovery notification so the user
+  /// hears "Voice session resumed" when audio returns.
+  Future<void> _onAudioResumed() async {
+    if (_currentState != VoiceSupervisorState.interrupted) {
+      return;
+    }
+
+    developer.log('Audio resumed, restoring pipeline', name: _tag);
+
+    try {
+      // 1. Restart the microphone.
+      final micStream = await _mic.startRecording();
+      _micSub = micStream.listen(_voiceService.sendAudio);
+
+      // 2. Re-subscribe to output monitor.
+      _outputSub = _outputMonitor.changes.listen(_onOutputChange);
+
+      // 3. Reconnect WebSocket if it was dropped during interruption.
+      await _reconnectWebSocketIfNeeded();
+
+      // 4. Restore the pre-interruption state (default to listening).
+      final restoredState =
+          _preInterruptionState ?? VoiceSupervisorState.listening;
+      _preInterruptionState = null;
+
+      // Only restore to listening or speaking; other states are transient.
+      if (restoredState == VoiceSupervisorState.listening ||
+          restoredState == VoiceSupervisorState.speaking) {
+        _setState(restoredState);
+      } else {
+        _setState(VoiceSupervisorState.listening);
+      }
+
+      // 5. Notify the user that the voice session has recovered.
+      _sendRecoveryNotification();
+
+      developer.log('Pipeline restored after interruption', name: _tag);
+    } catch (e) {
+      developer.log('Failed to resume after interruption: $e', name: _tag);
+      _setState(VoiceSupervisorState.error);
+    }
+  }
+
+  /// Checks if the WebSocket connection is still alive and reconnects
+  /// if it was dropped during the audio interruption.
+  Future<void> _reconnectWebSocketIfNeeded() async {
+    try {
+      // Attempt to refresh the system prompt as a connectivity check.
+      final prompt = await _buildSystemPrompt();
+      await _voiceService.updateSystemPrompt(prompt);
+    } catch (_) {
+      // Connection is dead; perform a full reconnect.
+      developer.log('WebSocket lost during interruption, reconnecting',
+          name: _tag);
+      await _voiceService.disconnect();
+
+      if (_apiKey != null) {
+        await _voiceService.connect(_apiKey!, tools: toolDefinitions);
+        final prompt = await _buildSystemPrompt();
+        await _voiceService.updateSystemPrompt(prompt);
+
+        // Re-subscribe to voice events since disconnect clears the stream.
+        _voiceEventSub?.cancel();
+        _voiceEventSub = _voiceService.events.listen(_handleVoiceEvent);
+      }
+    }
+  }
+
+  /// Sends a "Voice session resumed" notification through the voice model
+  /// so the user hears a spoken confirmation when audio returns.
+  void _sendRecoveryNotification() {
+    const message = '[REPORT] Voice session resumed after interruption.';
+    final reportBytes = Uint8List.fromList(utf8.encode(message));
+    try {
+      _voiceService.injectAudioReport(reportBytes);
+    } catch (e) {
+      developer.log('Failed to send recovery notification: $e', name: _tag);
     }
   }
 
@@ -517,6 +667,12 @@ class VoiceSupervisor {
 
     _outputSub?.cancel();
     _outputSub = null;
+
+    _audioStateSub?.cancel();
+    _audioStateSub = null;
+
+    _apiKey = null;
+    _preInterruptionState = null;
 
     await _mic.stopRecording();
     await _voiceService.disconnect();

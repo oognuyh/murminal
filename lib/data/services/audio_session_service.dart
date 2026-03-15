@@ -102,15 +102,20 @@ class AudioSessionService {
   }
 
   /// Attempts to reactivate the audio session after an interruption.
+  ///
+  /// On successful reactivation, emits [AudioSessionState.resumed] first
+  /// so listeners can trigger recovery logic (e.g. WebSocket reconnection),
+  /// then transitions to [AudioSessionState.active].
   Future<void> _resumeAfterInterruption() async {
     try {
       if (_session != null) {
         final activated = await _session!.setActive(true);
-        _updateState(
-          activated
-              ? AudioSessionState.active
-              : AudioSessionState.deactivated,
-        );
+        if (activated) {
+          _updateState(AudioSessionState.resumed);
+          _updateState(AudioSessionState.active);
+        } else {
+          _updateState(AudioSessionState.deactivated);
+        }
       }
     } catch (_) {
       _updateState(AudioSessionState.deactivated);
