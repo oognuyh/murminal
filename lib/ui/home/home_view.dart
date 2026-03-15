@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:murminal/core/providers.dart';
+import 'package:murminal/core/router.dart';
 import 'package:murminal/data/models/session.dart';
 
 /// Theme colors matching the app's dark slate design.
@@ -16,22 +18,30 @@ const _textMuted = Color(0xFF475569);
 /// Status-specific colors for card left-border accents.
 const _statusCyan = Color(0xFF22D3EE);
 const _statusGreen = Color(0xFF22C55E);
+const _statusGrey = Color(0xFF64748B);
 const _statusRed = Color(0xFFEF4444);
 
 /// Session count threshold above which compact mode activates.
 const _compactThreshold = 4;
 
-/// Home screen displaying session status cards.
+/// Home dashboard displaying session status cards.
 ///
-/// Shows a header with the app title and bell button, followed by
-/// a scrollable list of session cards sorted by status: running first,
-/// then done, then idle.
+/// Shows a header with the app title, subtitle, and settings gear icon,
+/// followed by an "ACTIVE SESSIONS" section with a scrollable list of
+/// session cards sorted by status: running first, then done, then idle.
 class HomeView extends ConsumerWidget {
   const HomeView({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sessionsAsync = ref.watch(allSessionsProvider);
+    final servers = ref.watch(serverListProvider);
+
+    // Build a lookup map from server ID to server label.
+    final serverLabels = <String, String>{};
+    for (final server in servers) {
+      serverLabels[server.id] = server.label;
+    }
 
     return Scaffold(
       backgroundColor: _background,
@@ -42,10 +52,11 @@ class HomeView extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 24),
-              _buildHeader(),
+              _buildHeader(context),
               const SizedBox(height: 24),
               sessionsAsync.when(
-                data: (sessions) => _buildSessionList(sessions),
+                data: (sessions) =>
+                    _buildSessionList(context, sessions, serverLabels),
                 loading: () => const Expanded(
                   child: Center(
                     child: CircularProgressIndicator(color: _accent),
@@ -71,8 +82,8 @@ class HomeView extends ConsumerWidget {
     );
   }
 
-  /// App header with title, subtitle, and notification bell.
-  Widget _buildHeader() {
+  /// App header with title, subtitle, and settings gear icon.
+  Widget _buildHeader(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -101,17 +112,20 @@ class HomeView extends ConsumerWidget {
             ),
           ],
         ),
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: _surface,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: const Icon(
-            Icons.notifications_outlined,
-            color: _textSecondary,
-            size: 22,
+        GestureDetector(
+          onTap: () => context.go(AppRoutes.settings),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.settings_outlined,
+              color: _textSecondary,
+              size: 22,
+            ),
           ),
         ),
       ],
@@ -119,7 +133,11 @@ class HomeView extends ConsumerWidget {
   }
 
   /// Session list with section label and sorted cards.
-  Widget _buildSessionList(List<Session> sessions) {
+  Widget _buildSessionList(
+    BuildContext context,
+    List<Session> sessions,
+    Map<String, String> serverLabels,
+  ) {
     final sorted = _sortSessions(sessions);
     final activeCount =
         sessions.where((s) => s.status == SessionStatus.running).length;
@@ -138,10 +156,11 @@ class HomeView extends ConsumerWidget {
                     itemCount: sorted.length,
                     padding: const EdgeInsets.only(bottom: 100),
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
+                    itemBuilder: (_, index) {
                       return _SessionCard(
                         session: sorted[index],
                         compact: compact,
+                        serverLabel: serverLabels[sorted[index].serverId],
                       );
                     },
                   ),
@@ -151,9 +170,10 @@ class HomeView extends ConsumerWidget {
     );
   }
 
-  /// Section header: ACTIVE SESSIONS label + count badge.
+  /// Section header: ACTIVE SESSIONS label with cyan count on the right.
   Widget _buildSectionHeader(int activeCount) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         const Text(
           'ACTIVE SESSIONS',
@@ -165,7 +185,6 @@ class HomeView extends ConsumerWidget {
             letterSpacing: 2,
           ),
         ),
-        const SizedBox(width: 8),
         Text(
           '$activeCount',
           style: const TextStyle(
@@ -214,19 +233,27 @@ class HomeView extends ConsumerWidget {
   }
 }
 
-/// Individual session status card with animated state transitions.
+/// Individual session status card matching the wireframe design.
 ///
-/// Displays the session engine icon, name, server, status indicator,
-/// current task description, and time since last activity.
+/// Layout:
+/// - Top row: cyan status dot + engine name (bold) | server name (right)
+/// - Second row: branch info (if available)
+/// - Third row: task description
+/// - Bottom row: time ago + status label
 ///
 /// Uses [AnimatedContainer] for smooth 200ms transitions when status
-/// changes. In compact mode (>4 sessions) padding is reduced and the
-/// task description row is hidden.
+/// changes. In compact mode (>4 sessions) the branch and task rows
+/// are hidden.
 class _SessionCard extends StatelessWidget {
   final Session session;
   final bool compact;
+  final String? serverLabel;
 
-  const _SessionCard({required this.session, this.compact = false});
+  const _SessionCard({
+    required this.session,
+    this.compact = false,
+    this.serverLabel,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -236,9 +263,8 @@ class _SessionCard extends StatelessWidget {
     final isError = session.status == SessionStatus.error;
 
     // Muted surface for done and idle states.
-    final cardColor = (isDone || isIdle)
-        ? _surface.withValues(alpha: 0.6)
-        : _surface;
+    final cardColor =
+        (isDone || isIdle) ? _surface.withValues(alpha: 0.6) : _surface;
 
     // Left border accent color per status.
     final borderColor = switch (session.status) {
@@ -254,7 +280,9 @@ class _SessionCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        // Navigate to session detail (to be implemented in a future issue).
+        context.push(
+          '/sessions/${session.id}?name=${Uri.encodeComponent(session.name)}',
+        );
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -273,58 +301,24 @@ class _SessionCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top row: status dot + engine name (bold) | server name (right)
             Row(
               children: [
-                _buildStatusIcon(),
-                const SizedBox(width: 12),
+                _buildStatusDot(),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        session.engine,
-                        style: TextStyle(
-                          color: primaryText,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          fontFamily: 'JetBrains Mono',
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        session.name,
-                        style: TextStyle(
-                          color: secondaryText,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          fontFamily: 'JetBrains Mono',
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    session.engine,
+                    style: TextStyle(
+                      color: primaryText,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'JetBrains Mono',
+                    ),
                   ),
                 ),
-                if (isRunning) ...[
-                  SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: _statusCyan.withValues(alpha: 0.7),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                if (isDone)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: Icon(
-                      Icons.check_circle_outline,
-                      color: _statusGreen,
-                      size: 16,
-                    ),
-                  ),
                 Text(
-                  _formatTimeSince(session.createdAt),
+                  serverLabel ?? session.serverId,
                   style: TextStyle(
                     color: secondaryText,
                     fontSize: 12,
@@ -335,27 +329,68 @@ class _SessionCard extends StatelessWidget {
               ],
             ),
             if (!compact) ...[
-              const SizedBox(height: 10),
-              // Server info row.
-              Text(
-                'server: ${session.serverId}',
-                style: TextStyle(
-                  color: isIdle ? _textMuted : _textMuted,
-                  fontSize: 12,
-                  fontFamily: 'Inter',
+              // Branch info row (if available).
+              if (session.worktreeBranch != null) ...[
+                const SizedBox(height: 6),
+                Padding(
+                  padding: const EdgeInsets.only(left: 20),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.call_split,
+                        color: secondaryText,
+                        size: 14,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          session.worktreeBranch!,
+                          style: TextStyle(
+                            color: secondaryText,
+                            fontSize: 12,
+                            fontFamily: 'JetBrains Mono',
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              // Task description row.
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.only(left: 20),
+                child: Text(
+                  _taskDescription(),
+                  style: TextStyle(
+                    color: isIdle ? _textMuted : _textSecondary,
+                    fontSize: 13,
+                    fontFamily: 'Inter',
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(height: 4),
-              // Task description from session status.
-              Text(
-                _taskDescription(),
-                style: TextStyle(
-                  color: isIdle ? _textMuted : _textSecondary,
-                  fontSize: 13,
-                  fontFamily: 'Inter',
+              // Bottom row: time ago + status label.
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 20),
+                child: Row(
+                  children: [
+                    Text(
+                      _formatTimeSince(session.createdAt),
+                      style: TextStyle(
+                        color: secondaryText,
+                        fontSize: 11,
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    _buildStatusLabel(),
+                  ],
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
             ],
           ],
@@ -364,34 +399,58 @@ class _SessionCard extends StatelessWidget {
     );
   }
 
-  /// Status indicator icon with color-coded background.
+  /// Small colored dot indicating session status.
   ///
-  /// Running: ◐ cyan, Done: checkmark green, Idle: ○ muted, Error: ✗ red.
-  Widget _buildStatusIcon() {
-    final (String symbol, Color color) = switch (session.status) {
-      SessionStatus.running => ('\u25D0', _statusCyan),
-      SessionStatus.done => ('\u2713', _statusGreen),
-      SessionStatus.idle => ('\u25CB', _textMuted),
-      SessionStatus.error => ('\u2717', _statusRed),
+  /// Running: cyan filled, Done: green checkmark, Idle: grey, Error: red.
+  Widget _buildStatusDot() {
+    if (session.status == SessionStatus.done) {
+      return Icon(
+        Icons.check_circle,
+        color: _statusGreen,
+        size: 10,
+      );
+    }
+
+    final color = switch (session.status) {
+      SessionStatus.running => _statusCyan,
+      SessionStatus.idle => _statusGrey,
+      SessionStatus.error => _statusRed,
+      SessionStatus.done => _statusGreen,
     };
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeInOut,
-      width: 28,
-      height: 28,
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+      ),
+    );
+  }
+
+  /// Colored status label badge.
+  Widget _buildStatusLabel() {
+    final (String label, Color color) = switch (session.status) {
+      SessionStatus.running => ('running', _statusCyan),
+      SessionStatus.done => ('done', _statusGreen),
+      SessionStatus.idle => ('idle', _statusGrey),
+      SessionStatus.error => ('error', _statusRed),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(4),
       ),
-      child: Center(
-        child: Text(
-          symbol,
-          style: TextStyle(
-            color: color,
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-          ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          fontFamily: 'Inter',
+          letterSpacing: 0.5,
         ),
       ),
     );
