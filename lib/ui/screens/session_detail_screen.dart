@@ -174,9 +174,11 @@ class _SessionDetailScreenState extends ConsumerState<SessionDetailScreen> {
       _ptySession = ptySession;
 
       // Forward PTY stdout to the xterm terminal widget.
+      // Use utf8.decode with allowMalformed to handle multi-byte
+      // characters (emoji, CJK, icons) split across stream chunks.
       _stdoutSub = ptySession.stdout.listen(
         (data) {
-          _terminal.write(String.fromCharCodes(data));
+          _terminal.write(utf8.decode(data, allowMalformed: true));
         },
         onDone: () {
           if (mounted) {
