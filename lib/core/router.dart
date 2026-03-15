@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:murminal/core/providers.dart';
 import 'package:murminal/data/models/server_config.dart';
+import 'package:murminal/data/services/ssh_service.dart' as ssh;
 import 'package:murminal/data/repositories/server_repository.dart';
 import 'package:murminal/ui/engine_profiles/engine_profile_editor_screen.dart';
 import 'package:murminal/ui/engine_profiles/engine_profile_list_screen.dart';
@@ -140,7 +143,25 @@ final router = GoRouter(
             GoRouter.of(context).go(location);
           },
           onMicPressed: () {
-            // Voice action will be implemented in a future issue.
+            // Navigate to voice session with first connected server,
+            // or show a snackbar if none connected.
+            final pool = ProviderScope.containerOf(context)
+                .read(sshConnectionPoolProvider);
+            final connected = pool.currentStates.entries
+                .where((e) => e.value == ssh.ConnectionState.connected)
+                .map((e) => e.key)
+                .toList();
+            if (connected.isEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Connect to a server first'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+              return;
+            }
+            GoRouter.of(context)
+                .push('/voice-session/${connected.first}');
           },
           tabs: const [
             HomeView(),
