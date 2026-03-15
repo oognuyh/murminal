@@ -13,6 +13,7 @@ import 'package:murminal/data/models/voice_supervisor_state.dart';
 import 'package:murminal/data/models/error_recovery_event.dart';
 import 'package:murminal/data/models/pattern_match_event.dart';
 import 'package:murminal/data/services/audio_session_service.dart';
+import 'package:murminal/data/services/pcm_player_service.dart';
 import 'package:murminal/data/services/error_recovery_service.dart';
 import 'package:murminal/data/services/mic_service.dart';
 import 'package:murminal/data/services/output_monitor.dart';
@@ -54,6 +55,7 @@ class VoiceSupervisor {
   final SshConnectionPool? _sshPool;
   final ErrorRecoveryService? _errorRecovery;
   final PatternMatchService? _patternMatchService;
+  final PcmPlayerService _pcmPlayer = PcmPlayerService();
 
   /// Whether this supervisor is using the local STT/TTS pipeline.
   bool _useLocal = false;
@@ -248,6 +250,7 @@ class VoiceSupervisor {
       // 1. Activate iOS audio session for background playback/recording.
       debugPrint('Step 1: activating audio session...');
       await _audioSession.activate();
+      await _pcmPlayer.start();
       debugPrint('Step 1: audio session activated');
 
       // 1a. Listen for audio session interruptions (phone calls, other apps).
@@ -375,7 +378,8 @@ class VoiceSupervisor {
           debugPrint('Voice: model speaking (audio ${event.audio.length} bytes)');
           _setState(VoiceSupervisorState.speaking);
         }
-        // TODO: pipe audio to AVAudioPlayer for playback
+        // Play PCM audio through native AVAudioEngine.
+        _pcmPlayer.play(event.audio);
 
       case AudioDone():
         debugPrint('Voice: model done speaking');
@@ -901,6 +905,7 @@ class VoiceSupervisor {
       await _voiceService.disconnect();
     }
     _useLocal = false;
+    await _pcmPlayer.stop();
     await _audioSession.deactivate();
   }
 
