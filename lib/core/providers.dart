@@ -32,7 +32,6 @@ import 'package:murminal/data/services/engine_registry.dart';
 import 'package:murminal/data/services/feedback_sound_service.dart';
 import 'package:murminal/data/services/error_recovery_service.dart';
 import 'package:murminal/data/services/voice_supervisor.dart';
-import 'package:murminal/data/services/worktree_service.dart';
 import 'package:murminal/data/models/voice_supervisor_state.dart';
 import 'package:murminal/data/models/error_recovery_event.dart';
 import 'package:murminal/data/models/pattern_match_event.dart';
@@ -204,27 +203,6 @@ final serverPreviewProvider =
   }
 });
 
-/// SSH service provider. One instance per server connection.
-///
-/// @deprecated Prefer [sshConnectionPoolProvider] for per-server connections.
-final sshServiceProvider = Provider<SshService>((ref) {
-  final service = SshService();
-  ref.onDispose(service.dispose);
-  return service;
-});
-
-/// Worktree service for managing git worktrees on remote hosts.
-final worktreeServiceProvider = Provider<WorktreeService>((ref) {
-  final ssh = ref.watch(sshServiceProvider);
-  return WorktreeService(ssh);
-});
-
-/// TmuxController backed by the current SSH connection.
-final tmuxControllerProvider = Provider<TmuxController>((ref) {
-  final ssh = ref.watch(sshServiceProvider);
-  return TmuxController(ssh);
-});
-
 /// Session repository for local persistence.
 final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
   final prefs = ref.watch(sharedPreferencesProvider);
@@ -266,13 +244,6 @@ final allSessionsProvider = FutureProvider<List<Session>>((ref) async {
 final sessionProvider = Provider.family<Session?, String>((ref, sessionId) {
   final service = ref.watch(sessionServiceProvider);
   return service.getSession(sessionId);
-});
-
-/// @deprecated Use [sessionsByServerProvider] instead.
-final sessionListProvider =
-    FutureProvider.family<List<Session>, String>((ref, serverId) async {
-  final service = ref.watch(sessionServiceProvider);
-  return service.listSessions(serverId: serverId);
 });
 
 /// Feedback sound service for voice confirmation cues.
@@ -355,11 +326,14 @@ final localVoiceServiceProvider = Provider<LocalVoiceService>((ref) {
 
 /// Output monitor for detecting tmux pane changes.
 ///
-/// Reads the polling interval from [pollingIntervalProvider] and applies it
-/// as the base interval. Uses [ref.listen] so interval changes take effect
-/// immediately without recreating the monitor.
-final outputMonitorProvider = Provider<OutputMonitor>((ref) {
-  final tmux = ref.watch(tmuxControllerProvider);
+/// Parameterized by server ID to obtain a per-server SSH connection
+/// from the connection pool. Reads the polling interval from
+/// [pollingIntervalProvider] and applies it as the base interval.
+final outputMonitorProvider =
+    Provider.family<OutputMonitor, String>((ref, serverId) {
+  final pool = ref.watch(sshConnectionPoolProvider);
+  final ssh = pool.getConnectionSync(serverId);
+  final tmux = TmuxController(ssh!);
   final monitor = OutputMonitor(tmux);
 
   // Apply current polling interval and listen for changes.
@@ -404,15 +378,12 @@ final errorRecoveryEventsProvider =
 /// Voice supervisor parameterized by server ID.
 ///
 /// Creates the full voice-to-terminal pipeline for the given server.
+/// Requires the server to be connected in the SSH pool.
 final voiceSupervisorProvider =
     Provider.family<VoiceSupervisor, String>((ref, serverId) {
-  // Use pool-based TmuxController for the specific server instead of
-  // the global tmuxControllerProvider (which uses a disconnected SshService).
   final pool = ref.watch(sshConnectionPoolProvider);
-  final sshService = pool.getConnectionSync(serverId);
-  final tmux = sshService != null
-      ? TmuxController(sshService)
-      : ref.watch(tmuxControllerProvider);
+  final ssh = pool.getConnectionSync(serverId);
+  final tmux = TmuxController(ssh!);
   final sessionSvc = ref.watch(sessionServiceProvider);
   final toolExecutor = ToolExecutor(
     tmux: tmux,
@@ -425,12 +396,12 @@ final voiceSupervisorProvider =
     audioSession: ref.watch(audioSessionServiceProvider),
     mic: ref.watch(micServiceProvider),
     sessionService: sessionSvc,
-    outputMonitor: ref.watch(outputMonitorProvider),
+    outputMonitor: ref.watch(outputMonitorProvider(serverId)),
     toolExecutor: toolExecutor,
     serverId: serverId,
-    sshPool: ref.watch(sshConnectionPoolProvider),
+    sshPool: pool,
     errorRecovery: ref.watch(errorRecoveryServiceProvider(serverId)),
-    patternMatchService: ref.watch(patternMatchServiceProvider),
+    patternMatchService: ref.watch(patternMatchServiceProvider(serverId)),
   );
   ref.onDispose(supervisor.dispose);
   return supervisor;
@@ -501,19 +472,24 @@ final userProfileNamesProvider = Provider<Set<String>>((ref) {
 
 /// Pattern match service for output monitoring and notifications.
 ///
+/// Parameterized by server ID to match [outputMonitorProvider].
 /// Watches [OutputMonitor] and matches terminal output against engine
 /// profile patterns, emitting [PatternMatchEvent]s for notification
 /// dispatch and voice announcements.
-final patternMatchServiceProvider = Provider<PatternMatchService>((ref) {
-  final monitor = ref.watch(outputMonitorProvider);
+final patternMatchServiceProvider =
+    Provider.family<PatternMatchService, String>((ref, serverId) {
+  final monitor = ref.watch(outputMonitorProvider(serverId));
   final service = PatternMatchService(monitor);
   ref.onDispose(service.dispose);
   return service;
 });
 
 /// Stream of pattern match events for UI binding.
-final patternMatchEventsProvider = StreamProvider<PatternMatchEvent>((ref) {
-  final service = ref.watch(patternMatchServiceProvider);
+///
+/// Parameterized by server ID to match [patternMatchServiceProvider].
+final patternMatchEventsProvider =
+    StreamProvider.family<PatternMatchEvent, String>((ref, serverId) {
+  final service = ref.watch(patternMatchServiceProvider(serverId));
   return service.matches;
 });
 
